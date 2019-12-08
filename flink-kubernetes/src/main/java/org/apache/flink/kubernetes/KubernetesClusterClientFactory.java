@@ -24,6 +24,7 @@ import org.apache.flink.client.deployment.ClusterClientFactory;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.DeploymentOptions;
 import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
+import org.apache.flink.kubernetes.executors.KubernetesJobClusterExecutor;
 import org.apache.flink.kubernetes.executors.KubernetesSessionClusterExecutor;
 import org.apache.flink.kubernetes.kubeclient.KubeClientFactory;
 
@@ -45,7 +46,8 @@ public class KubernetesClusterClientFactory extends AbstractClusterClientFactory
 	public boolean isCompatibleWith(Configuration configuration) {
 		checkNotNull(configuration);
 		final String deploymentTarget = configuration.getString(DeploymentOptions.TARGET);
-		return KubernetesSessionClusterExecutor.NAME.equalsIgnoreCase(deploymentTarget);
+		return KubernetesJobClusterExecutor.NAME.equalsIgnoreCase(deploymentTarget) ||
+			KubernetesSessionClusterExecutor.NAME.equalsIgnoreCase(deploymentTarget);
 	}
 
 	@Override
