@@ -33,7 +33,6 @@ import org.apache.flink.configuration.JobManagerOptions;
 import org.apache.flink.configuration.MemorySize;
 import org.apache.flink.configuration.TaskManagerOptions;
 import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
-import org.apache.flink.kubernetes.configuration.KubernetesConfigOptionsInternal;
 import org.apache.flink.kubernetes.executors.KubernetesJobClusterExecutor;
 import org.apache.flink.kubernetes.executors.KubernetesSessionClusterExecutor;
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
@@ -201,24 +200,17 @@ public class FlinkKubernetesCustomCli extends AbstractCustomCommandLine {
 			effectiveConfiguration.setString(key, dynamicProperties.getProperty(key));
 		}
 
-		final StringBuilder entryPointClassArgs = new StringBuilder();
 		if (commandLine.hasOption(jobClassOption.getOpt())) {
-			entryPointClassArgs.append(" --")
-				.append(jobClassOption.getLongOpt())
-				.append(" ")
-				.append(commandLine.getOptionValue(jobClassOption.getOpt()));
+			effectiveConfiguration.setString(KubernetesConfigOptions.JOB_CLASS_NAME,
+				commandLine.getOptionValue(jobClassOption.getOpt()));
 		}
 
 		if (commandLine.hasOption(jobIdOption.getOpt())) {
-			entryPointClassArgs.append(" --")
-				.append(jobIdOption.getLongOpt())
-				.append(" ")
-				.append(commandLine.getOptionValue(jobIdOption.getOpt()));
+			effectiveConfiguration.setString(KubernetesConfigOptions.JOB_ID,
+				commandLine.getOptionValue(jobIdOption.getOpt()));
 		}
-		if (!entryPointClassArgs.toString().isEmpty()) {
-			effectiveConfiguration.setString(KubernetesConfigOptionsInternal.ENTRY_POINT_CLASS_ARGS,
-				entryPointClassArgs.toString());
-		}
+
+		// TODO set job program arguments
 
 		return effectiveConfiguration;
 	}
@@ -244,10 +236,18 @@ public class FlinkKubernetesCustomCli extends AbstractCustomCommandLine {
 			final boolean detached = cmd.hasOption(DETACHED_OPTION.getOpt());
 			final FlinkKubeClient kubeClient = KubeClientFactory.fromConfiguration(configuration);
 
-			// Retrieve or create a session cluster.
+			// Retrieve an existing cluster
 			if (clusterId != null && kubeClient.getInternalService(clusterId) != null) {
 				clusterClient = kubernetesClusterDescriptor.retrieve(clusterId);
+			} else if (configuration.get(DeploymentOptions.TARGET).equals(KubernetesJobClusterExecutor.NAME)) {
+				// Deploy a job cluster
+				clusterClient = kubernetesClusterDescriptor.deployJobCluster(
+					kubernetesClusterClientFactory.getClusterSpecification(configuration),
+					null,
+					detached
+				);
 			} else {
+				// Deploy a session cluster.
 				clusterClient = kubernetesClusterDescriptor.deploySessionCluster(
 					kubernetesClusterClientFactory.getClusterSpecification(configuration));
 				clusterId = clusterClient.getClusterId();

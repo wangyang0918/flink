@@ -89,7 +89,7 @@ public class KubernetesConfigOptions {
 		.withDescription("Timeout used for creating the service. The timeout value requires a time-unit " +
 			"specifier (ms/s/min/h/d).");
 
-  	// ---------------------------------------------------------------------------------
+	// ---------------------------------------------------------------------------------
 	// The following config options could be overridden by KubernetesCliOptions.
 	// ---------------------------------------------------------------------------------
 
@@ -105,6 +105,24 @@ public class KubernetesConfigOptions {
 		.stringType()
 		.defaultValue("flink:latest")
 		.withDescription("Image to use for Flink containers.");
+
+	public static final ConfigOption<String> JOB_CLASS_NAME =
+		key("kubernetes.per-job.job-class-name")
+		.stringType()
+		.noDefaultValue()
+		.withDescription("Class name of the job to run.");
+
+	public static final ConfigOption<String> JOB_ID =
+		key("kubernetes.per-job.job-id")
+		.stringType()
+		.noDefaultValue()
+		.withDescription("Job ID of the job to run.");
+
+	public static final ConfigOption<String> JOB_PROGRAM_ARGS =
+		key("kubernetes.per-job.program.args")
+			.stringType()
+			.noDefaultValue()
+			.withDescription("Program arguments of the job to run.");
 
 	/**
 	 * The following config options need to be set according to the image.

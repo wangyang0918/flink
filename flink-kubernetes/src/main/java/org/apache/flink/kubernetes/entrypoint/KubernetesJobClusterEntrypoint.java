@@ -19,19 +19,21 @@
 package org.apache.flink.kubernetes.entrypoint;
 
 import org.apache.flink.api.common.JobID;
+import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
-import org.apache.flink.configuration.ConfigurationUtils;
 import org.apache.flink.configuration.GlobalConfiguration;
 import org.apache.flink.container.entrypoint.ClassPathJobGraphRetriever;
+import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
 import org.apache.flink.runtime.entrypoint.ClusterEntrypoint;
-import org.apache.flink.runtime.entrypoint.FlinkParseException;
 import org.apache.flink.runtime.entrypoint.JobClusterEntrypoint;
 import org.apache.flink.runtime.entrypoint.component.DefaultDispatcherResourceManagerComponentFactory;
-import org.apache.flink.runtime.entrypoint.parser.CommandLineParser;
+import org.apache.flink.runtime.jobgraph.SavepointConfigOptions;
 import org.apache.flink.runtime.jobgraph.SavepointRestoreSettings;
 import org.apache.flink.runtime.util.EnvironmentInformation;
 import org.apache.flink.runtime.util.JvmShutdownSafeguard;
 import org.apache.flink.runtime.util.SignalHandler;
+import org.apache.flink.util.FlinkRuntimeException;
+import org.apache.flink.util.Preconditions;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -93,28 +95,42 @@ public final class KubernetesJobClusterEntrypoint extends JobClusterEntrypoint {
 		SignalHandler.register(LOG);
 		JvmShutdownSafeguard.installAsShutdownHook(LOG);
 
-		final CommandLineParser<KubernetesJobClusterConfiguration> commandLineParser =
-			new CommandLineParser<>(new KubernetesJobClusterConfigurationParserFactory());
-
-		KubernetesJobClusterConfiguration clusterConfiguration = null;
-		try {
-			clusterConfiguration = commandLineParser.parse(args);
-		} catch (FlinkParseException e) {
-			LOG.error("Could not parse command line arguments {}.", args, e);
-			commandLineParser.printHelp(KubernetesJobClusterEntrypoint.class.getSimpleName());
-			System.exit(1);
-		}
-
-		final Configuration configuration = GlobalConfiguration.loadConfiguration(
-			clusterConfiguration.getConfigDir(),
-			ConfigurationUtils.createConfiguration(clusterConfiguration.getDynamicProperties()));
+		final String configDir = System.getenv(ConfigConstants.ENV_FLINK_CONF_DIR);
+		Preconditions.checkNotNull(
+			configDir,
+			"Flink configuration directory (%s) in environment should not be null!",
+			ConfigConstants.ENV_FLINK_CONF_DIR);
+		final Configuration configuration = GlobalConfiguration.loadConfiguration(configDir);
 
 		ClusterEntrypoint entrypoint = new KubernetesJobClusterEntrypoint(
 			configuration,
-			clusterConfiguration.getJobId(),
-			clusterConfiguration.getSavepointRestoreSettings(),
-			clusterConfiguration.getArgs(),
-			clusterConfiguration.getJobClassName());
+			getJobId(configuration),
+			getSavepointRestoreSettings(configuration),
+			new String[]{}, // TODO support program arguments
+			configuration.get(KubernetesConfigOptions.JOB_CLASS_NAME));
 		ClusterEntrypoint.runClusterEntrypoint(entrypoint);
+	}
+
+	private static JobID getJobId(Configuration flinkConfig) {
+		final String jobId = flinkConfig.get(KubernetesConfigOptions.JOB_ID);
+		if (jobId == null) {
+			return JobID.generate();
+		}
+		try {
+			return JobID.fromHexString(jobId);
+		} catch (IllegalArgumentException e) {
+			throw new FlinkRuntimeException(String.format("Failed to parse job id from config %s=%s",
+				KubernetesConfigOptions.JOB_ID.key(), jobId), e);
+		}
+	}
+
+	private static SavepointRestoreSettings getSavepointRestoreSettings(Configuration flinkConfig) {
+		final String savepointPath = flinkConfig.get(SavepointConfigOptions.SAVEPOINT_PATH);
+		final boolean allowNonRestoredState = flinkConfig.getBoolean(SavepointConfigOptions.SAVEPOINT_IGNORE_UNCLAIMED_STATE);
+		if (savepointPath != null) {
+			return SavepointRestoreSettings.forPath(savepointPath, allowNonRestoredState);
+		} else {
+			return SavepointRestoreSettings.none();
+		}
 	}
 }

@@ -96,7 +96,7 @@ public class KubernetesCliOptions {
 		.required(false)
 		.hasArg(true)
 		.argName("job class name")
-		.desc("Class name of the job to run.")
+		.desc(KubernetesConfigOptions.JOB_CLASS_NAME.description().toString())
 		.build();
 
 	public static final Option JOB_ID_OPTION = Option.builder("jid")
@@ -104,7 +104,15 @@ public class KubernetesCliOptions {
 		.required(false)
 		.hasArg(true)
 		.argName("job id")
-		.desc("Job ID of the job to run.")
+		.desc(KubernetesConfigOptions.JOB_ID.description().toString())
+		.build();
+
+	public static final Option JOB_PROGRAM_ARGUMENTS = Option.builder("args")
+		.longOpt("program-arguments")
+		.required(false)
+		.hasArg(true)
+		.argName("program arguments")
+		.desc(KubernetesConfigOptions.JOB_PROGRAM_ARGS.description().toString())
 		.build();
 
 	/** This class is not meant to be instantiated. */

@@ -31,6 +31,7 @@ import org.apache.flink.configuration.RestOptions;
 import org.apache.flink.configuration.TaskManagerOptions;
 import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
 import org.apache.flink.kubernetes.configuration.KubernetesConfigOptionsInternal;
+import org.apache.flink.kubernetes.entrypoint.KubernetesJobClusterEntrypoint;
 import org.apache.flink.kubernetes.entrypoint.KubernetesSessionClusterEntrypoint;
 import org.apache.flink.kubernetes.kubeclient.Endpoint;
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
@@ -124,7 +125,18 @@ public class KubernetesClusterDescriptor implements ClusterDescriptor<String> {
 			ClusterSpecification clusterSpecification,
 			JobGraph jobGraph,
 			boolean detached) throws ClusterDeploymentException {
-		throw new ClusterDeploymentException("Per job could not be supported now.");
+		ClusterClient<String> clusterClient;
+		if (jobGraph != null) {
+			throw new ClusterDeploymentException("Per-job with client job graph could not be supported now.");
+		} else {
+			clusterClient = deployClusterInternal(
+				KubernetesJobClusterEntrypoint.class.getName(),
+				clusterSpecification,
+				detached);
+		}
+		LOG.info("Create flink job cluster {} successfully, JobManager Web Interface: {}",
+			clusterId, clusterClient.getWebInterfaceURL());
+		return clusterClient;
 	}
 
 	private ClusterClient<String> deployClusterInternal(
