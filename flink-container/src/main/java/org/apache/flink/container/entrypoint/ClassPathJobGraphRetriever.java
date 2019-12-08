@@ -58,7 +58,7 @@ import static java.util.Objects.requireNonNull;
  * {@link JobGraphRetriever} which creates the {@link JobGraph} from a class
  * on the class path.
  */
-class ClassPathJobGraphRetriever extends AbstractUserClassPathJobGraphRetriever {
+public class ClassPathJobGraphRetriever extends AbstractUserClassPathJobGraphRetriever {
 
 	private static final Logger LOG = LoggerFactory.getLogger(ClassPathJobGraphRetriever.class);
 
@@ -219,7 +219,10 @@ class ClassPathJobGraphRetriever extends AbstractUserClassPathJobGraphRetriever 
 		}
 	}
 
-	static class Builder {
+	/**
+	 * Builder for creating a {@link ClassPathJobGraphRetriever}.
+	 */
+	public static class Builder {
 
 		private final JobID jobId;
 
@@ -241,22 +244,22 @@ class ClassPathJobGraphRetriever extends AbstractUserClassPathJobGraphRetriever 
 			this.programArguments = requireNonNull(programArguments);
 		}
 
-		Builder setJobClassName(@Nullable String jobClassName) {
+		public Builder setJobClassName(@Nullable String jobClassName) {
 			this.jobClassName = jobClassName;
 			return this;
 		}
 
-		Builder setUserLibDirectory(File userLibDirectory) {
+		public Builder setUserLibDirectory(File userLibDirectory) {
 			this.userLibDirectory = userLibDirectory;
 			return this;
 		}
 
-		Builder setJarsOnClassPath(Supplier<Iterable<File>> jarsOnClassPath) {
+		public Builder setJarsOnClassPath(Supplier<Iterable<File>> jarsOnClassPath) {
 			this.jarsOnClassPath = jarsOnClassPath;
 			return this;
 		}
 
-		ClassPathJobGraphRetriever build() throws IOException {
+		public ClassPathJobGraphRetriever build() throws IOException {
 			return new ClassPathJobGraphRetriever(
 				jobId,
 				savepointRestoreSettings,
@@ -267,7 +270,7 @@ class ClassPathJobGraphRetriever extends AbstractUserClassPathJobGraphRetriever 
 		}
 	}
 
-	static Builder newBuilder(JobID jobId, SavepointRestoreSettings savepointRestoreSettings, String[] programArguments) {
+	public static Builder newBuilder(JobID jobId, SavepointRestoreSettings savepointRestoreSettings, String[] programArguments) {
 		return new Builder(jobId, savepointRestoreSettings, programArguments);
 	}
 
