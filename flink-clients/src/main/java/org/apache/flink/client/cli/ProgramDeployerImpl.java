@@ -44,14 +44,10 @@ public class ProgramDeployerImpl implements ProgramDeployer {
 	public <ClusterID> void deploy(final Configuration configuration) throws Exception {
 		final ClusterClientFactory<ClusterID> clientFactory = clientServiceLoader.getClusterClientFactory(configuration);
 		try (final ClusterDescriptor<ClusterID> clusterDescriptor = clientFactory.createClusterDescriptor(configuration)) {
-			final ExecutionConfigAccessor configAccessor = ExecutionConfigAccessor.fromConfiguration(configuration);
-
 			final ClusterSpecification clusterSpecification = clientFactory.getClusterSpecification(configuration);
 
 			// TODO: 29.01.20 the following call should change to return a different, application client.
-			//  Also this is a hack as we pass a null jobgraph.
-			final ClusterClientProvider<ClusterID> clusterClientProvider = clusterDescriptor
-					.deployJobCluster(clusterSpecification, null, configAccessor.getDetachedMode());
+			final ClusterClientProvider<ClusterID> clusterClientProvider = clusterDescriptor.deployApplicationCluster(clusterSpecification);
 		}
 	}
 }

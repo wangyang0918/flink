@@ -52,6 +52,11 @@ public class DummyClusterDescriptor<T> implements ClusterDescriptor<T> {
 	}
 
 	@Override
+	public ClusterClientProvider<T> deployApplicationCluster(ClusterSpecification clusterSpecification) {
+		throw new UnsupportedOperationException("Operation not supported.");
+	}
+
+	@Override
 	public ClusterClientProvider<T> deployJobCluster(
 			ClusterSpecification clusterSpecification,
 			JobGraph jobGraph,

@@ -369,6 +369,11 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 	}
 
 	@Override
+	public ClusterClientProvider<ApplicationId> deployApplicationCluster(ClusterSpecification clusterSpecification) {
+		throw new UnsupportedOperationException("Operation not supported.");
+	}
+
+	@Override
 	public ClusterClientProvider<ApplicationId> deploySessionCluster(ClusterSpecification clusterSpecification) throws ClusterDeploymentException {
 		try {
 			return deployInternal(

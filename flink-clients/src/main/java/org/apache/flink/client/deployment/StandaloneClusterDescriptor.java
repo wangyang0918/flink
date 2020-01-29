@@ -56,6 +56,11 @@ public class StandaloneClusterDescriptor implements ClusterDescriptor<Standalone
 	}
 
 	@Override
+	public ClusterClientProvider<StandaloneClusterId> deployApplicationCluster(ClusterSpecification clusterSpecification) {
+		throw new UnsupportedOperationException("Operation not supported.");
+	}
+
+	@Override
 	public ClusterClientProvider<StandaloneClusterId> deploySessionCluster(ClusterSpecification clusterSpecification) {
 		throw new UnsupportedOperationException("Can't deploy a standalone cluster.");
 	}

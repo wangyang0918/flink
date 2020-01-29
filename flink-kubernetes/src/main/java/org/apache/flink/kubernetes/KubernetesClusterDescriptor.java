@@ -123,6 +123,11 @@ public class KubernetesClusterDescriptor implements ClusterDescriptor<String> {
 	}
 
 	@Override
+	public ClusterClientProvider<String> deployApplicationCluster(ClusterSpecification clusterSpecification) {
+		throw new UnsupportedOperationException("Operation not supported.");
+	}
+
+	@Override
 	public ClusterClientProvider<String> deploySessionCluster(ClusterSpecification clusterSpecification) throws ClusterDeploymentException {
 		final ClusterClientProvider<String> clusterClientProvider = deployClusterInternal(
 			KubernetesSessionClusterEntrypoint.class.getName(),
