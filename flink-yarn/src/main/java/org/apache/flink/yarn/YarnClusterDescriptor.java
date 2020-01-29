@@ -49,6 +49,7 @@ import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.ShutdownHookUtil;
 import org.apache.flink.yarn.configuration.YarnConfigOptions;
 import org.apache.flink.yarn.configuration.YarnConfigOptionsInternal;
+import org.apache.flink.yarn.entrypoint.YarnApplicationClusterEntrypoint;
 import org.apache.flink.yarn.entrypoint.YarnJobClusterEntrypoint;
 import org.apache.flink.yarn.entrypoint.YarnSessionClusterEntrypoint;
 
@@ -369,8 +370,18 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 	}
 
 	@Override
-	public ClusterClientProvider<ApplicationId> deployApplicationCluster(ClusterSpecification clusterSpecification) {
-		throw new UnsupportedOperationException("Operation not supported.");
+	public ClusterClientProvider<ApplicationId> deployApplicationCluster(ClusterSpecification clusterSpecification) throws ClusterDeploymentException {
+		try {
+			// TODO: 29.01.20 this has to NOT use the existing deplyInternal because this ships all the dependencies from this client, which is not what we want
+			return deployInternal(
+					clusterSpecification,
+					"Flink application cluster",
+					YarnApplicationClusterEntrypoint.class.getName(),
+					null,
+					true);
+		} catch (Exception e) {
+			throw new ClusterDeploymentException("Couldn't deploy Yarn application cluster", e);
+		}
 	}
 
 	@Override

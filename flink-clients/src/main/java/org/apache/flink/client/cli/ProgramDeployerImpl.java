@@ -26,6 +26,9 @@ import org.apache.flink.client.deployment.ClusterSpecification;
 import org.apache.flink.client.program.ClusterClientProvider;
 import org.apache.flink.configuration.Configuration;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /**
@@ -33,6 +36,8 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  */
 @Internal
 public class ProgramDeployerImpl implements ProgramDeployer {
+
+	private static final Logger LOG = LoggerFactory.getLogger(ProgramDeployerImpl.class);
 
 	private final ClusterClientServiceLoader clientServiceLoader;
 
@@ -42,6 +47,8 @@ public class ProgramDeployerImpl implements ProgramDeployer {
 
 	@Override
 	public <ClusterID> void deploy(final Configuration configuration) throws Exception {
+		LOG.info("Submitting application with the following configuration: {}", configuration);
+
 		final ClusterClientFactory<ClusterID> clientFactory = clientServiceLoader.getClusterClientFactory(configuration);
 		try (final ClusterDescriptor<ClusterID> clusterDescriptor = clientFactory.createClusterDescriptor(configuration)) {
 			final ClusterSpecification clusterSpecification = clientFactory.getClusterSpecification(configuration);
