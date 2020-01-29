@@ -38,6 +38,9 @@ import java.util.Collection;
  */
 public class CliFrontendParser {
 
+	static final Option REMOTE_DEPLOYMENT_OPTION = new Option("R", "deploy-remote", false,
+			"If set to true, then the main method of your application is going to be executed on the cluster.");
+
 	static final Option HELP_OPTION = new Option("h", "help", false,
 			"Show the help message for the CLI Frontend or the action.");
 
@@ -240,6 +243,7 @@ public class CliFrontendParser {
 	}
 
 	private static Options getProgramSpecificOptions(Options options) {
+		options.addOption(REMOTE_DEPLOYMENT_OPTION);
 		options.addOption(JAR_OPTION);
 		options.addOption(CLASS_OPTION);
 		options.addOption(CLASSPATH_OPTION);
@@ -259,6 +263,7 @@ public class CliFrontendParser {
 	}
 
 	private static Options getProgramSpecificOptionsWithoutDeprecatedOptions(Options options) {
+		options.addOption(REMOTE_DEPLOYMENT_OPTION);
 		options.addOption(CLASS_OPTION);
 		options.addOption(CLASSPATH_OPTION);
 		options.addOption(PARALLELISM_OPTION);

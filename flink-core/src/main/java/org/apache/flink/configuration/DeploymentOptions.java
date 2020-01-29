@@ -34,6 +34,13 @@ public class DeploymentOptions {
 					.noDefaultValue()
 					.withDescription("The deployment target for the execution, e.g. \"local\" for local execution.");
 
+	public static final ConfigOption<Boolean> REMOTE_DEPLOYMENT =
+			key("execution.deploy.remotely")
+					.booleanType()
+					.defaultValue(false)
+					.withDescription("If set to true, then the main method of your application is going to be executed" +
+							" on the cluster. Otherwise it will be executed on the client.");
+
 	public static final ConfigOption<Boolean> ATTACHED =
 			key("execution.attached")
 					.booleanType()

@@ -38,6 +38,7 @@ import org.apache.flink.client.program.ProgramParametrizationException;
 import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.CoreOptions;
+import org.apache.flink.configuration.DeploymentOptions;
 import org.apache.flink.configuration.GlobalConfiguration;
 import org.apache.flink.configuration.JobManagerOptions;
 import org.apache.flink.configuration.RestOptions;
@@ -78,6 +79,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static org.apache.flink.client.cli.CliFrontendParser.HELP_OPTION;
+import static org.apache.flink.client.cli.CliFrontendParser.REMOTE_DEPLOYMENT_OPTION;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /**
@@ -113,6 +115,8 @@ public class CliFrontend {
 
 	private final ClusterClientServiceLoader clusterClientServiceLoader;
 
+	private final ProgramDeployer deployer;
+
 	public CliFrontend(
 			Configuration configuration,
 			List<CustomCommandLine> customCommandLines) {
@@ -126,6 +130,7 @@ public class CliFrontend {
 		this.configuration = checkNotNull(configuration);
 		this.customCommandLines = checkNotNull(customCommandLines);
 		this.clusterClientServiceLoader = checkNotNull(clusterClientServiceLoader);
+		this.deployer = new ProgramDeployerImpl(clusterClientServiceLoader);
 
 		FileSystem.initialize(configuration, PluginUtils.createPluginManagerFromRootFolder(configuration));
 
@@ -209,10 +214,16 @@ public class CliFrontend {
 
 		LOG.debug("Effective executor configuration: {}", effectiveConfiguration);
 
-		try {
-			executeProgram(effectiveConfiguration, program);
-		} finally {
-			program.deleteExtractedLibraries();
+		if (commandLine.hasOption(REMOTE_DEPLOYMENT_OPTION.getOpt())) {
+			effectiveConfiguration.set(DeploymentOptions.REMOTE_DEPLOYMENT, true);
+			deployer.deploy(effectiveConfiguration);
+		} else {
+			// TODO: 29.01.20 this can go to a different deployer or a different method of the same deployer
+			try {
+				executeProgram(effectiveConfiguration, program);
+			} finally {
+				program.deleteExtractedLibraries();
+			}
 		}
 	}
 
