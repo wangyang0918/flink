@@ -278,4 +278,12 @@ public class DefaultDispatcherResourceManagerComponentFactory implements Dispatc
 			resourceManagerFactory,
 			JobRestEndpointFactory.INSTANCE);
 	}
+
+	public static DefaultDispatcherResourceManagerComponentFactory createApplicationComponentFactory(
+			ResourceManagerFactory<?> resourceManagerFactory) {
+		return new DefaultDispatcherResourceManagerComponentFactory(
+				DefaultDispatcherRunnerFactory.createSessionRunner(SessionDispatcherFactory.INSTANCE),
+				resourceManagerFactory,
+				JobRestEndpointFactory.INSTANCE);
+	}
 }
