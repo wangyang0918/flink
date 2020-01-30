@@ -48,7 +48,8 @@ public class YarnApplicationClusterEntrypoint extends ClusterEntrypoint {
 
 	@Override
 	protected DispatcherResourceManagerComponentFactory createDispatcherResourceManagerComponentFactory(Configuration configuration) {
-		return DefaultDispatcherResourceManagerComponentFactory.createApplicationComponentFactory(YarnResourceManagerFactory.getInstance());
+		return DefaultDispatcherResourceManagerComponentFactory
+				.createApplicationComponentFactory(YarnResourceManagerFactory.getInstance());
 	}
 
 	@Override
@@ -77,6 +78,10 @@ public class YarnApplicationClusterEntrypoint extends ClusterEntrypoint {
 		}
 
 		Configuration configuration = YarnEntrypointUtils.loadConfiguration(workingDirectory, env);
+
+		if (LOG.isDebugEnabled()) {
+			LOG.debug("Launching application in Application Mode with config: {}", configuration);
+		}
 
 		YarnApplicationClusterEntrypoint yarnApplicationClusterEntrypoint = new YarnApplicationClusterEntrypoint(configuration);
 

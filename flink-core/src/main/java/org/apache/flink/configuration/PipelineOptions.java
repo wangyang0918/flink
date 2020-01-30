@@ -36,6 +36,20 @@ import static org.apache.flink.configuration.description.TextElement.text;
  */
 @PublicEvolving
 public class PipelineOptions {
+
+	public static final ConfigOption<String> MAIN_CLASS =
+		key("pipeline.main_class")
+			.stringType()
+			.noDefaultValue()
+			.withDescription("The main class in the user jar.");
+
+	public static final ConfigOption<List<String>> PROGRAM_ARGS =
+		key("pipeline.main_args")
+			.stringType()
+			.asList()
+			.noDefaultValue()
+			.withDescription("This list of user arguments to be provided to the main.");
+
 	/**
 	 * A list of jar files that contain the user-defined function (UDF) classes and all classes used from within the UDFs.
 	 */

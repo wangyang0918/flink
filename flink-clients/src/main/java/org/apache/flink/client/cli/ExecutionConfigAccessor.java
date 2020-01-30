@@ -69,6 +69,11 @@ public class ExecutionConfigAccessor {
 		configuration.setBoolean(DeploymentOptions.ATTACHED, !options.getDetachedMode());
 		configuration.setBoolean(DeploymentOptions.SHUTDOWN_IF_ATTACHED, options.isShutdownOnAttachedExit());
 
+		if (options.getEntryPointClassName() != null) {
+			configuration.set(PipelineOptions.MAIN_CLASS, options.getEntryPointClassName());
+		}
+
+		ConfigUtils.encodeArrayToConfig(configuration, PipelineOptions.PROGRAM_ARGS, options.getProgramArgs(), arg -> arg);
 		ConfigUtils.encodeCollectionToConfig(configuration, PipelineOptions.CLASSPATHS, options.getClasspaths(), URL::toString);
 		ConfigUtils.encodeCollectionToConfig(configuration, PipelineOptions.JARS, jobJars, URL::toString);
 
@@ -80,6 +85,10 @@ public class ExecutionConfigAccessor {
 	public Configuration applyToConfiguration(final Configuration baseConfiguration) {
 		baseConfiguration.addAll(configuration);
 		return baseConfiguration;
+	}
+
+	public List<String> getProgramArgs() {
+		return ConfigUtils.decodeListFromConfig(configuration, PipelineOptions.PROGRAM_ARGS, arg -> arg);
 	}
 
 	public List<URL> getJars() {
@@ -98,6 +107,10 @@ public class ExecutionConfigAccessor {
 				throw new IllegalArgumentException("Invalid URL", e);
 			}
 		});
+	}
+
+	public String getMainClassName() {
+		return configuration.get(PipelineOptions.MAIN_CLASS);
 	}
 
 	public int getParallelism() {
