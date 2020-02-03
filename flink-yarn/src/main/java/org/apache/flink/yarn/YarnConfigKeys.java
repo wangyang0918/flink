@@ -30,6 +30,7 @@ public class YarnConfigKeys {
 	public static final String ENV_APP_ID = "_APP_ID";
 	public static final String ENV_CLIENT_HOME_DIR = "_CLIENT_HOME_DIR";
 	public static final String ENV_CLIENT_SHIP_FILES = "_CLIENT_SHIP_FILES";
+	public static final String ENV_JAR_FILES = "_CLIENT_JAR_FILES";
 
 	public static final String ENV_FLINK_CLASSPATH = "_FLINK_CLASSPATH";
 

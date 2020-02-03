@@ -25,7 +25,6 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.jobgraph.SavepointRestoreSettings;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.net.URL;
 import java.util.List;
 
@@ -37,13 +36,12 @@ import static org.apache.flink.util.Preconditions.checkState;
  */
 public class Utils {
 
-	public static PackagedProgram getPackagedProgram(final Configuration configuration) throws FileNotFoundException, ProgramInvocationException {
+	public static PackagedProgram getPackagedProgram(final Configuration configuration, final List<File> jars) throws ProgramInvocationException {
 		checkNotNull(configuration);
 
 		final ExecutionConfigAccessor configAccessor =
 				ExecutionConfigAccessor.fromConfiguration(configuration);
 
-		final List<URL> jars = configAccessor.getJars();
 		checkState(!jars.isEmpty(), "At least the job jar should be specified.");
 
 		final List<URL> classpaths = configAccessor.getClasspaths();
@@ -51,7 +49,7 @@ public class Utils {
 		final String[] programArgs = configAccessor.getProgramArgs().toArray(new String[0]);
 
 		final SavepointRestoreSettings savepointRestoreSettings = SavepointRestoreSettings.fromConfiguration(configuration);
-		final File jar = getJarFile(jars.get(0)); // TODO: 30.01.20 is this correct? the user may specify multiple jars but we keep one???
+		final File jar = jars.get(0); // TODO: 30.01.20 is this correct? the user may specify multiple jars but we keep one???
 
 		return PackagedProgram.newBuilder()
 				.setJarFile(jar)
@@ -61,16 +59,5 @@ public class Utils {
 				.setSavepointRestoreSettings(savepointRestoreSettings)
 				.setArguments(programArgs)
 				.build();
-	}
-
-	private static File getJarFile(final URL jarFileUrl) throws FileNotFoundException {
-		File jarFile = new File(jarFileUrl.toString());
-		if (!jarFile.exists()) {
-			throw new FileNotFoundException("JAR file does not exist: " + jarFile);
-		}
-		else if (!jarFile.isFile()) {
-			throw new FileNotFoundException("JAR file is not a file: " + jarFile);
-		}
-		return jarFile;
 	}
 }
