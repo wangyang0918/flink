@@ -21,12 +21,14 @@ package org.apache.flink.kubernetes.kubeclient;
 import org.apache.flink.client.deployment.ClusterSpecification;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesService;
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesWatch;
 
 import javax.annotation.Nullable;
 
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 /**
  * The client to talk with kubernetes.
@@ -127,9 +129,15 @@ public interface FlinkKubeClient extends AutoCloseable {
 	 * Watch the pods selected by labels and do the {@link PodCallbackHandler}.
 	 *
 	 * @param labels labels to filter the pods to watch
-	 * @param callbackHandler {@link PodCallbackHandler} will be called when the watcher receive the corresponding events.
+	 * @param callbackHandler {@link PodCallbackHandler} will be called when the watcher receives corresponding events.
+	 * @param podsWatcherCloseHandler the handler when the watcher is closing with exception.
+	 *
+	 * @return Return a watch for pods. It needs to be closed after use.
 	 */
-	void watchPodsAndDoCallback(Map<String, String> labels, PodCallbackHandler callbackHandler);
+	KubernetesWatch watchPodsAndDoCallback(
+		Map<String, String> labels,
+		PodCallbackHandler callbackHandler,
+		Consumer<Exception> podsWatcherCloseHandler);
 
 	/**
 	 * Callback handler for kubernetes pods.

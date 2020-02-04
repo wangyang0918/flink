@@ -35,6 +35,7 @@ import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesDeployment;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesService;
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesWatch;
 import org.apache.flink.kubernetes.utils.Constants;
 import org.apache.flink.util.TimeUtils;
 import org.apache.flink.util.function.FunctionUtils;
@@ -60,6 +61,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
@@ -253,7 +255,10 @@ public class Fabric8FlinkKubeClient implements FlinkKubeClient {
 	}
 
 	@Override
-	public void watchPodsAndDoCallback(Map<String, String> labels, PodCallbackHandler callbackHandler) {
+	public KubernetesWatch watchPodsAndDoCallback(
+			Map<String, String> labels,
+			PodCallbackHandler callbackHandler,
+			Consumer<Exception> podsWatcherCloseHandler) {
 		final Watcher<Pod> watcher = new Watcher<Pod>() {
 			@Override
 			public void eventReceived(Action action, Pod pod) {
@@ -279,10 +284,15 @@ public class Fabric8FlinkKubeClient implements FlinkKubeClient {
 
 			@Override
 			public void onClose(KubernetesClientException e) {
-				LOG.error("The pods watcher is closing.", e);
+				if (e != null) {
+					LOG.error("The pods watcher is closing with exception.", e);
+					podsWatcherCloseHandler.accept(e);
+				} else {
+					LOG.debug("The pods watcher is closing.");
+				}
 			}
 		};
-		this.internalClient.pods().withLabels(labels).watch(watcher);
+		return new KubernetesWatch(flinkConfig, this.internalClient.pods().withLabels(labels).watch(watcher));
 	}
 
 	@Override

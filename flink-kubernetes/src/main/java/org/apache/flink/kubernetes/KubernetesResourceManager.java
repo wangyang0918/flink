@@ -26,6 +26,7 @@ import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
 import org.apache.flink.kubernetes.kubeclient.KubeClientFactory;
 import org.apache.flink.kubernetes.kubeclient.TaskManagerPodParameter;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesWatch;
 import org.apache.flink.kubernetes.taskmanager.KubernetesTaskExecutorRunner;
 import org.apache.flink.kubernetes.utils.Constants;
 import org.apache.flink.kubernetes.utils.KubernetesUtils;
@@ -60,6 +61,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 /**
  * Kubernetes specific implementation of the {@link ResourceManager}.
@@ -92,6 +94,9 @@ public class KubernetesResourceManager extends ActiveResourceManager<KubernetesW
 
 	/** The number of pods requested, but not yet granted. */
 	private int numPendingPodRequests = 0;
+
+	private KubernetesWatch podsWatcher;
+	private Consumer<Exception> podsWatcherCloseHandler;
 
 	public KubernetesResourceManager(
 			RpcService rpcService,
@@ -138,7 +143,11 @@ public class KubernetesResourceManager extends ActiveResourceManager<KubernetesW
 	protected void initialize() throws ResourceManagerException {
 		recoverWorkerNodesFromPreviousAttempts();
 
-		kubeClient.watchPodsAndDoCallback(getTaskManagerLabels(), this);
+		podsWatcherCloseHandler = e -> {
+			LOG.info("Starting a new pods watcher.");
+			podsWatcher = startPodsWatcher();
+		};
+		podsWatcher = startPodsWatcher();
 	}
 
 	@Override
@@ -147,6 +156,7 @@ public class KubernetesResourceManager extends ActiveResourceManager<KubernetesW
 		Throwable exception = null;
 
 		try {
+			podsWatcher.close();
 			kubeClient.close();
 		} catch (Throwable t) {
 			exception = t;
@@ -334,6 +344,10 @@ public class KubernetesResourceManager extends ActiveResourceManager<KubernetesW
 
 	protected FlinkKubeClient createFlinkKubeClient() {
 		return KubeClientFactory.fromConfiguration(flinkConfig);
+	}
+
+	private KubernetesWatch startPodsWatcher() {
+		return kubeClient.watchPodsAndDoCallback(getTaskManagerLabels(), this, podsWatcherCloseHandler);
 	}
 
 	@Override
