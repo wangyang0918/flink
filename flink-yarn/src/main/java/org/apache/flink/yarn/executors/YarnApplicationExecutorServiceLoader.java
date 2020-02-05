@@ -22,8 +22,13 @@ import org.apache.flink.annotation.Internal;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.core.execution.PipelineExecutorFactory;
 import org.apache.flink.core.execution.PipelineExecutorServiceLoader;
+import org.apache.flink.runtime.dispatcher.DispatcherGateway;
+import org.apache.flink.runtime.webmonitor.retriever.LeaderGatewayRetriever;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
+
+import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /**
  * A {@link PipelineExecutorServiceLoader} that returns ONLY an executor
@@ -35,9 +40,16 @@ import java.util.stream.Stream;
 @Internal
 public class YarnApplicationExecutorServiceLoader implements PipelineExecutorServiceLoader {
 
+	private final CompletableFuture<LeaderGatewayRetriever<DispatcherGateway>> dispatcherGatewayRetrieverFuture;
+
+	public YarnApplicationExecutorServiceLoader(
+			final CompletableFuture<LeaderGatewayRetriever<DispatcherGateway>> dispatcherGatewayRetrieverFuture) {
+		this.dispatcherGatewayRetrieverFuture = checkNotNull(dispatcherGatewayRetrieverFuture);
+	}
+
 	@Override
 	public PipelineExecutorFactory getExecutorFactory(final Configuration configuration) {
-		return new YarnApplicationExecutorFactory();
+		return new YarnApplicationExecutorFactory(dispatcherGatewayRetrieverFuture);
 	}
 
 	@Override

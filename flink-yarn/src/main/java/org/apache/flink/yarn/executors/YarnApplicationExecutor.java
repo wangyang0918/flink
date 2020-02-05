@@ -19,17 +19,23 @@
 package org.apache.flink.yarn.executors;
 
 import org.apache.flink.annotation.Internal;
+import org.apache.flink.api.common.time.Time;
 import org.apache.flink.api.dag.Pipeline;
 import org.apache.flink.client.deployment.executors.ExecutorUtils;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.core.execution.PipelineExecutor;
+import org.apache.flink.runtime.dispatcher.DispatcherGateway;
 import org.apache.flink.runtime.jobgraph.JobGraph;
+import org.apache.flink.runtime.messages.Acknowledge;
+import org.apache.flink.runtime.webmonitor.retriever.LeaderGatewayRetriever;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
+
+import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /**
  * A {@link PipelineExecutor} used when executing jobs in {@code APPLICATION} mode on Yarn.
@@ -42,10 +48,20 @@ public class YarnApplicationExecutor implements PipelineExecutor {
 
 	public static final String NAME = "yarn-application";
 
+	private final CompletableFuture<LeaderGatewayRetriever<DispatcherGateway>> dispatcherRetrieverFuture;
+
+	public YarnApplicationExecutor(final CompletableFuture<LeaderGatewayRetriever<DispatcherGateway>> dispatcherGatewayRetrieverFuture) {
+		this.dispatcherRetrieverFuture = checkNotNull(dispatcherGatewayRetrieverFuture);
+	}
+
 	@Override
 	public CompletableFuture<JobClient> execute(final Pipeline pipeline, final Configuration configuration) {
 		final JobGraph jobGraph = ExecutorUtils.getJobGraph(pipeline, configuration);
-		LOG.info("Executing .... (\"\\uD83D\\uDCA9\")");
-		return null;
+
+		final CompletableFuture<Acknowledge> submissionResult = this.dispatcherRetrieverFuture.thenCompose(
+				dispatcherRetriever -> dispatcherRetriever.getFuture().thenCompose(
+						dispatcher -> dispatcher.submitJob(jobGraph, Time.minutes(5L)))); // TODO: 05.02.20 checkout this timeout
+
+		return CompletableFuture.completedFuture(null);
 	}
 }

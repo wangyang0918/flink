@@ -23,12 +23,25 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.DeploymentOptions;
 import org.apache.flink.core.execution.PipelineExecutor;
 import org.apache.flink.core.execution.PipelineExecutorFactory;
+import org.apache.flink.runtime.dispatcher.DispatcherGateway;
+import org.apache.flink.runtime.webmonitor.retriever.LeaderGatewayRetriever;
+
+import java.util.concurrent.CompletableFuture;
+
+import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /**
  * A {@link PipelineExecutorFactory} used for instantiating {@link YarnApplicationExecutor ApplicationExecutors}.
  */
 @Internal
 public class YarnApplicationExecutorFactory implements PipelineExecutorFactory {
+
+	private final CompletableFuture<LeaderGatewayRetriever<DispatcherGateway>> dispatcherGatewayRetrieverFuture;
+
+	public YarnApplicationExecutorFactory(
+			final CompletableFuture<LeaderGatewayRetriever<DispatcherGateway>> dispatcherGatewayRetrieverFuture) {
+		this.dispatcherGatewayRetrieverFuture = checkNotNull(dispatcherGatewayRetrieverFuture);
+	}
 
 	@Override
 	public String getName() {
@@ -42,6 +55,6 @@ public class YarnApplicationExecutorFactory implements PipelineExecutorFactory {
 
 	@Override
 	public PipelineExecutor getExecutor(final Configuration configuration) {
-		return new YarnApplicationExecutor();
+		return new YarnApplicationExecutor(dispatcherGatewayRetrieverFuture);
 	}
 }

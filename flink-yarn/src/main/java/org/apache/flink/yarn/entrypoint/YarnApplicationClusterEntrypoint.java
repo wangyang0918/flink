@@ -113,7 +113,9 @@ public class YarnApplicationClusterEntrypoint extends ClusterEntrypoint {
 				LOG.debug("Launching application in Application Mode with config: {}", configuration);
 			}
 
-			final PipelineExecutorServiceLoader executorServiceLoader = new YarnApplicationExecutorServiceLoader();
+			final PipelineExecutorServiceLoader executorServiceLoader = new YarnApplicationExecutorServiceLoader(
+					yarnApplicationClusterEntrypoint.getDispatcherGatewayRetrieverFuture()
+			);
 
 			// TODO: 05.02.20 rename clientUtils to submitUtils or sth...
 			ClientUtils.executeProgram(executorServiceLoader, configuration, executable);
