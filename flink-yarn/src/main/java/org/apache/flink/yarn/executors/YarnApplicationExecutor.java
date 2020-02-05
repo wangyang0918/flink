@@ -19,15 +19,16 @@
 package org.apache.flink.yarn.executors;
 
 import org.apache.flink.annotation.Internal;
+import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.api.dag.Pipeline;
 import org.apache.flink.client.deployment.executors.ExecutorUtils;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.WebOptions;
 import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.core.execution.PipelineExecutor;
 import org.apache.flink.runtime.dispatcher.DispatcherGateway;
 import org.apache.flink.runtime.jobgraph.JobGraph;
-import org.apache.flink.runtime.messages.Acknowledge;
 import org.apache.flink.runtime.webmonitor.retriever.LeaderGatewayRetriever;
 
 import org.slf4j.Logger;
@@ -56,12 +57,20 @@ public class YarnApplicationExecutor implements PipelineExecutor {
 
 	@Override
 	public CompletableFuture<JobClient> execute(final Pipeline pipeline, final Configuration configuration) {
+		checkNotNull(pipeline);
+		checkNotNull(configuration);
+
+		final Time timeout = Time.milliseconds(configuration.getLong(WebOptions.TIMEOUT));
+
 		final JobGraph jobGraph = ExecutorUtils.getJobGraph(pipeline, configuration);
+		final JobID jobID = jobGraph.getJobID();
 
-		final CompletableFuture<Acknowledge> submissionResult = this.dispatcherRetrieverFuture.thenCompose(
-				dispatcherRetriever -> dispatcherRetriever.getFuture().thenCompose(
-						dispatcher -> dispatcher.submitJob(jobGraph, Time.minutes(5L)))); // TODO: 05.02.20 checkout this timeout
+		LOG.info("Executing job {}.", jobID);
 
-		return CompletableFuture.completedFuture(null);
+		return this.dispatcherRetrieverFuture
+				.thenCompose(dispatcherRetriever ->
+						dispatcherRetriever.getFuture().thenCompose(dispatcher ->
+								dispatcher.submitJob(jobGraph, timeout)))
+				.thenApply(ack -> new GatewayRetrieverJobClientAdapter(dispatcherRetrieverFuture, jobID, timeout));
 	}
 }
