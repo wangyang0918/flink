@@ -20,11 +20,14 @@ package org.apache.flink.streaming.examples.wordcount;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.utils.MultipleParameterTool;
-import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.checkpoint.ListCheckpointed;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.source.SourceFunction;
 import org.apache.flink.streaming.examples.wordcount.util.WordCountData;
 import org.apache.flink.util.Collector;
-import org.apache.flink.util.Preconditions;
+
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Implements the "WordCount" program that computes a simple word occurrence
@@ -60,38 +63,43 @@ public class WordCount {
 		// make parameters available in the web interface
 		env.getConfig().setGlobalJobParameters(params);
 
-		// get input data
-		DataStream<String> text = null;
-		if (params.has("input")) {
-			// union all the inputs from text files
-			for (String input : params.getMultiParameterRequired("input")) {
-				if (text == null) {
-					text = env.readTextFile(input);
-				} else {
-					text = text.union(env.readTextFile(input));
-				}
-			}
-			Preconditions.checkNotNull(text, "Input DataStream should not be null.");
-		} else {
-			System.out.println("Executing WordCount example with default input data set.");
-			System.out.println("Use --input to specify file input.");
-			// get default test text data
-			text = env.fromElements(WordCountData.WORDS);
-		}
+		env.addSource(new Generator(10, 10, 60))
+				.keyBy(0)
+				.print();
 
-		DataStream<Tuple2<String, Integer>> counts =
-			// split up the lines in pairs (2-tuples) containing: (word,1)
-			text.flatMap(new Tokenizer())
-			// group by the tuple field "0" and sum up tuple field "1"
-			.keyBy(0).sum(1);
-
-		// emit result
-		if (params.has("output")) {
-			counts.writeAsText(params.get("output"));
-		} else {
-			System.out.println("Printing result to stdout. Use --output to specify output path.");
-			counts.print();
-		}
+//		env.execute("StreamingFileSinkProgram");
+//		// get input data
+//		DataStream<String> text = null;
+//		if (params.has("input")) {
+//			// union all the inputs from text files
+//			for (String input : params.getMultiParameterRequired("input")) {
+//				if (text == null) {
+//					text = env.readTextFile(input);
+//				} else {
+//					text = text.union(env.readTextFile(input));
+//				}
+//			}
+//			Preconditions.checkNotNull(text, "Input DataStream should not be null.");
+//		} else {
+//			System.out.println("Executing WordCount example with default input data set.");
+//			System.out.println("Use --input to specify file input.");
+//			// get default test text data
+//			text = env.fromElements(WordCountData.WORDS);
+//		}
+//
+//		DataStream<Tuple2<String, Integer>> counts =
+//			// split up the lines in pairs (2-tuples) containing: (word,1)
+//			text.flatMap(new Tokenizer())
+//			// group by the tuple field "0" and sum up tuple field "1"
+//			.keyBy(0).sum(1);
+//
+//		// emit result
+//		if (params.has("output")) {
+//			counts.writeAsText(params.get("output"));
+//		} else {
+//			System.out.println("Printing result to stdout. Use --output to specify output path.");
+//			counts.print();
+//		}
 		// execute program
 		env.execute("Streaming WordCount");
 	}
@@ -99,6 +107,64 @@ public class WordCount {
 	// *************************************************************************
 	// USER FUNCTIONS
 	// *************************************************************************
+
+	/**
+	 * Data-generating source function.
+	 */
+	public static final class Generator implements SourceFunction<Tuple2<Integer, Integer>>, ListCheckpointed<Integer> {
+
+		private static final long serialVersionUID = -2819385275681175792L;
+
+		private final int numKeys;
+		private final int idlenessMs;
+		private final int recordsToEmit;
+
+		private volatile int numRecordsEmitted = 0;
+		private volatile boolean canceled = false;
+
+		Generator(final int numKeys, final int idlenessMs, final int durationSeconds) {
+			this.numKeys = numKeys;
+			this.idlenessMs = idlenessMs;
+
+			this.recordsToEmit = ((durationSeconds * 1000) / idlenessMs) * numKeys;
+		}
+
+		@Override
+		public void run(final SourceContext<Tuple2<Integer, Integer>> ctx) throws Exception {
+			while (numRecordsEmitted < recordsToEmit) {
+				synchronized (ctx.getCheckpointLock()) {
+					for (int i = 0; i < numKeys; i++) {
+						ctx.collect(Tuple2.of(i, numRecordsEmitted));
+						numRecordsEmitted++;
+					}
+				}
+				Thread.sleep(idlenessMs);
+			}
+
+			while (!canceled) {
+				Thread.sleep(50);
+			}
+
+		}
+
+		@Override
+		public void cancel() {
+			canceled = true;
+		}
+
+		@Override
+		public List<Integer> snapshotState(final long checkpointId, final long timestamp) {
+			return Collections.singletonList(numRecordsEmitted);
+		}
+
+		@Override
+		public void restoreState(final List<Integer> states) {
+			for (final Integer state : states) {
+				numRecordsEmitted += state;
+			}
+		}
+	}
+
 
 	/**
 	 * Implements the string tokenizer that splits sentences into words as a
@@ -116,6 +182,7 @@ public class WordCount {
 			// emit the pairs
 			for (String token : tokens) {
 				if (token.length() > 0) {
+					System.out.println("IN: " + token);
 					out.collect(new Tuple2<>(token, 1));
 				}
 			}

@@ -22,19 +22,29 @@ import org.apache.flink.annotation.Internal;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.api.dag.Pipeline;
+import org.apache.flink.client.cli.ExecutionConfigAccessor;
 import org.apache.flink.client.deployment.executors.ExecutorUtils;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.WebOptions;
 import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.core.execution.PipelineExecutor;
+import org.apache.flink.runtime.blob.BlobClient;
+import org.apache.flink.runtime.client.ClientUtils;
 import org.apache.flink.runtime.dispatcher.DispatcherGateway;
 import org.apache.flink.runtime.jobgraph.JobGraph;
+import org.apache.flink.runtime.jobgraph.SavepointRestoreSettings;
+import org.apache.flink.runtime.messages.Acknowledge;
 import org.apache.flink.runtime.webmonitor.retriever.LeaderGatewayRetriever;
+import org.apache.flink.util.FlinkException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.InetSocketAddress;
+import java.net.URL;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
@@ -60,17 +70,54 @@ public class YarnApplicationExecutor implements PipelineExecutor {
 		checkNotNull(pipeline);
 		checkNotNull(configuration);
 
-		final Time timeout = Time.milliseconds(configuration.getLong(WebOptions.TIMEOUT));
+		final ExecutionConfigAccessor configAccessor = ExecutionConfigAccessor.fromConfiguration(configuration);
+		final List<URL> classpathURLs = configAccessor.getClasspaths();
+		final List<URL> jarURLs = configAccessor.getJars();
+		final SavepointRestoreSettings savepointRestoreSettings = configAccessor.getSavepointRestoreSettings();
 
 		final JobGraph jobGraph = ExecutorUtils.getJobGraph(pipeline, configuration);
+		jobGraph.addJars(jarURLs);
+		jobGraph.setClasspaths(classpathURLs);
+		jobGraph.setSavepointRestoreSettings(savepointRestoreSettings);
+
 		final JobID jobID = jobGraph.getJobID();
 
-		LOG.info("Executing job {}.", jobID);
+		LOG.info("Executing job {} with configuration= {}.", jobID, configuration);
 
-		return this.dispatcherRetrieverFuture
-				.thenCompose(dispatcherRetriever ->
-						dispatcherRetriever.getFuture().thenCompose(dispatcher ->
-								dispatcher.submitJob(jobGraph, timeout)))
+		final Time timeout = Time.milliseconds(configuration.getLong(WebOptions.TIMEOUT));
+		return submitGraphFiles(configuration, jobGraph, timeout)
 				.thenApply(ack -> new GatewayRetrieverJobClientAdapter(dispatcherRetrieverFuture, jobID, timeout));
+	}
+
+	private CompletableFuture<Acknowledge> submitGraphFiles(
+			final Configuration configuration,
+			final JobGraph jobGraph,
+			final Time timeout) {
+
+		checkNotNull(jobGraph);
+		checkNotNull(timeout);
+
+		final CompletableFuture<DispatcherGateway> gatewayRetrieverFuture =
+				dispatcherRetrieverFuture.thenCompose(LeaderGatewayRetriever::getFuture);
+
+		return gatewayRetrieverFuture.thenCompose(dispatcher ->
+				dispatcher.getBlobServerPort(timeout).thenCompose(blobServerPort -> {
+					final InetSocketAddress address = new InetSocketAddress(dispatcher.getHostname(), blobServerPort);
+
+					final JobGraph updatedJobGraph = uploadJobGraphFiles(configuration, address, jobGraph);
+					return dispatcher.submitJob(updatedJobGraph, timeout);
+				}));
+	}
+
+	private JobGraph uploadJobGraphFiles(
+			final Configuration configuration,
+			final InetSocketAddress blobServerAddress,
+			final JobGraph jobGraph) {
+		try {
+			ClientUtils.extractAndUploadJobGraphFiles(jobGraph, () -> new BlobClient(blobServerAddress, configuration));
+		} catch (FlinkException e) {
+			throw new CompletionException(e);
+		}
+		return jobGraph;
 	}
 }
