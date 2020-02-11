@@ -33,6 +33,7 @@ import org.apache.flink.configuration.RestOptions;
 import org.apache.flink.configuration.TaskManagerOptions;
 import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
 import org.apache.flink.kubernetes.configuration.KubernetesConfigOptionsInternal;
+import org.apache.flink.kubernetes.entrypoint.KubernetesApplicationClusterEntrypoint;
 import org.apache.flink.kubernetes.entrypoint.KubernetesSessionClusterEntrypoint;
 import org.apache.flink.kubernetes.kubeclient.Endpoint;
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
@@ -123,8 +124,19 @@ public class KubernetesClusterDescriptor implements ClusterDescriptor<String> {
 	}
 
 	@Override
-	public ClusterClientProvider<String> deployApplicationCluster(ClusterSpecification clusterSpecification) {
-		throw new UnsupportedOperationException("Operation not supported.");
+	public ClusterClientProvider<String> deployApplicationCluster(ClusterSpecification clusterSpecification) throws ClusterDeploymentException {
+		final ClusterClientProvider<String> clusterClientProvider = deployClusterInternal(
+			KubernetesApplicationClusterEntrypoint.class.getName(),
+			clusterSpecification,
+			false);
+
+		try (ClusterClient<String> clusterClient = clusterClientProvider.getClusterClient()) {
+			LOG.info(
+				"Create flink application cluster {} successfully, JobManager Web Interface: {}",
+				clusterId,
+				clusterClient.getWebInterfaceURL());
+		}
+		return clusterClientProvider;
 	}
 
 	@Override

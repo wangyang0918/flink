@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.flink.yarn.executors;
+package org.apache.flink.client.deployment.executors;
 
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.api.common.JobExecutionResult;

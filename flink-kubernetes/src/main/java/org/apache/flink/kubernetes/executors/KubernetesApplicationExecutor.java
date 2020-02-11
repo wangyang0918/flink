@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.flink.yarn.executors;
+package org.apache.flink.kubernetes.executors;
 
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.client.deployment.executors.AbstractApplicationExecutor;
@@ -31,11 +31,11 @@ import java.util.concurrent.CompletableFuture;
  * In this mode the user's main method is executed at the job master.
  */
 @Internal
-public class YarnApplicationExecutor extends AbstractApplicationExecutor {
+public class KubernetesApplicationExecutor extends AbstractApplicationExecutor {
 
-	public static final String NAME = "yarn-application";
+	public static final String NAME = "kubernetes-application";
 
-	public YarnApplicationExecutor(CompletableFuture<LeaderGatewayRetriever<DispatcherGateway>> dispatcherGatewayRetrieverFuture) {
+	public KubernetesApplicationExecutor(CompletableFuture<LeaderGatewayRetriever<DispatcherGateway>> dispatcherGatewayRetrieverFuture) {
 		super(dispatcherGatewayRetrieverFuture);
 	}
 }
