@@ -36,11 +36,13 @@ import org.apache.flink.runtime.jobgraph.SavepointRestoreSettings;
 import org.apache.flink.runtime.util.EnvironmentInformation;
 import org.apache.flink.runtime.util.JvmShutdownSafeguard;
 import org.apache.flink.runtime.util.SignalHandler;
+import org.apache.flink.util.FlinkRuntimeException;
 
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Javadoc.
@@ -71,23 +73,32 @@ public class KubernetesApplicationClusterEntrypoint extends ClusterEntrypoint {
 
 		final Configuration configuration = KubernetesEntrypointUtils.loadConfiguration();
 
-		final KubernetesApplicationClusterEntrypoint yarnApplicationClusterEntrypoint =
+		final KubernetesApplicationClusterEntrypoint kubernetesApplicationClusterEntrypoint =
 				new KubernetesApplicationClusterEntrypoint(configuration);
 
-		final PackagedProgram executable = getExecutable(configuration);
+		// Use explicit executor
+		CompletableFuture.runAsync(() -> executeProgram(configuration, kubernetesApplicationClusterEntrypoint));
+		ClusterEntrypoint.runClusterEntrypoint(kubernetesApplicationClusterEntrypoint);
+	}
+
+	private static void executeProgram(Configuration config, KubernetesApplicationClusterEntrypoint entrypoint) {
+		final PackagedProgram executable;
+		try {
+			executable = getExecutable(config);
+		} catch (ProgramInvocationException e) {
+			throw new FlinkRuntimeException(e);
+		}
 
 		final PipelineExecutorServiceLoader executorServiceLoader = new KubernetesApplicationExecutorServiceLoader(
-				yarnApplicationClusterEntrypoint.getDispatcherGatewayRetrieverFuture()
+			entrypoint.getDispatcherGatewayRetrieverFuture()
 		);
 
 		try {
 			// TODO: 05.02.20 rename clientUtils to submitUtils or sth...
-			ClientUtils.executeProgram(executorServiceLoader, configuration, executable);
+			ClientUtils.executeProgram(executorServiceLoader, config, executable);
 		} catch (Exception e) {
 			LOG.warn("Could not execute program: ", e);
 		}
-
-		ClusterEntrypoint.runClusterEntrypoint(yarnApplicationClusterEntrypoint);
 	}
 
 	private static PackagedProgram getExecutable(final Configuration config) throws ProgramInvocationException {
