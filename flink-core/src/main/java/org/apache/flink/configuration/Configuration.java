@@ -769,7 +769,15 @@ public class Configuration extends ExecutionConfig.GlobalJobParameters
 		synchronized (this.confData){
 			Map<String, String> ret = new HashMap<>(this.confData.size());
 			for (Map.Entry<String, Object> entry : confData.entrySet()) {
-				ret.put(entry.getKey(), entry.getValue().toString());
+				String value;
+				if (entry.getValue() instanceof List) {
+					value = String.join(
+						";",
+						((List<?>) entry.getValue()).stream().map(Object::toString).toArray(String[]::new));
+				} else {
+					value = entry.getValue().toString();
+				}
+				ret.put(entry.getKey(), value);
 			}
 			return ret;
 		}

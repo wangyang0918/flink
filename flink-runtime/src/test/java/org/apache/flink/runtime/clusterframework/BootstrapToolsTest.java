@@ -20,8 +20,11 @@ package org.apache.flink.runtime.clusterframework;
 
 import org.apache.flink.api.common.resources.CPUResource;
 import org.apache.flink.configuration.ConfigConstants;
+import org.apache.flink.configuration.ConfigOption;
+import org.apache.flink.configuration.ConfigOptions;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.CoreOptions;
+import org.apache.flink.configuration.GlobalConfiguration;
 import org.apache.flink.configuration.MemorySize;
 import org.apache.flink.configuration.ResourceManagerOptions;
 import org.apache.flink.runtime.akka.AkkaUtils;
@@ -33,14 +36,20 @@ import org.apache.flink.util.TestLogger;
 import org.apache.flink.util.function.CheckedSupplier;
 
 import akka.actor.ActorSystem;
+import org.hamcrest.Matchers;
 import org.junit.Assert;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
+import java.io.IOException;
 import java.net.BindException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -65,6 +74,9 @@ import static org.junit.Assert.fail;
 public class BootstrapToolsTest extends TestLogger {
 
 	private static final Logger LOG = LoggerFactory.getLogger(BootstrapToolsTest.class);
+
+	@Rule
+	public TemporaryFolder temporaryFolder = new TemporaryFolder();
 
 	@Test
 	public void testSubstituteConfigKey() {
@@ -532,5 +544,23 @@ public class BootstrapToolsTest extends TestLogger {
 		Map<String, String> res = BootstrapTools.getEnvironmentVariables("containerized.master.env.", testConf);
 
 		Assert.assertEquals(0, res.size());
+	}
+
+	@Test
+	public void testWriteConfigurationAndReload() throws IOException {
+		final File flinkConfDir = temporaryFolder.newFolder().getAbsoluteFile();
+		final Configuration flinkConfig = new Configuration();
+		final ConfigOption<List<String>> listConfigOption = ConfigOptions
+			.key("test-list-string-key")
+			.stringType()
+			.asList()
+			.noDefaultValue();
+		final List<String> values = Arrays.asList("value1", "value2", "value3");
+		flinkConfig.set(listConfigOption, values);
+		assertThat(values, Matchers.containsInAnyOrder(flinkConfig.get(listConfigOption).toArray()));
+
+		BootstrapTools.writeConfiguration(flinkConfig, new File(flinkConfDir, "flink-conf.yaml"));
+		final Configuration loadedFlinkConfig = GlobalConfiguration.loadConfiguration(flinkConfDir.getAbsolutePath());
+		assertThat(values, Matchers.containsInAnyOrder(loadedFlinkConfig.get(listConfigOption).toArray()));
 	}
 }

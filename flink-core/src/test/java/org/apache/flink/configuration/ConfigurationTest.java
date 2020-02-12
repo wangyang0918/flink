@@ -23,6 +23,9 @@ import org.apache.flink.util.TestLogger;
 
 import org.junit.Test;
 
+import java.util.Arrays;
+import java.util.List;
+
 import static org.hamcrest.Matchers.containsString;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -321,6 +324,15 @@ public class ConfigurationTest extends TestLogger {
 		}
 	}
 
+	@Test
+	public void testToMap() {
+		final ConfigOption<List<String>> listConfigOption = createListStringConfigOption();
+		final Configuration configuration = new Configuration();
+		final String values = "value1;value2;value3";
+		configuration.set(listConfigOption, Arrays.asList(values.split(";")));
+		assertEquals(values, configuration.toMap().get(listConfigOption.key()));
+	}
+
 	enum TestEnum {
 		VALUE1,
 		VALUE2
@@ -329,6 +341,14 @@ public class ConfigurationTest extends TestLogger {
 	private static ConfigOption<String> createStringConfigOption() {
 		return ConfigOptions
 			.key("test-string-key")
+			.noDefaultValue();
+	}
+
+	private static ConfigOption<List<String>> createListStringConfigOption() {
+		return ConfigOptions
+			.key("test-list-string-key")
+			.stringType()
+			.asList()
 			.noDefaultValue();
 	}
 }
