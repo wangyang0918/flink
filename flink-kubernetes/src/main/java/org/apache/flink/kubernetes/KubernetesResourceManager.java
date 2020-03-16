@@ -27,6 +27,8 @@ import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
 import org.apache.flink.kubernetes.kubeclient.factory.KubernetesTaskManagerFactory;
 import org.apache.flink.kubernetes.kubeclient.parameters.KubernetesTaskManagerParameters;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPodsWatcher;
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesWatch;
 import org.apache.flink.kubernetes.utils.KubernetesUtils;
 import org.apache.flink.runtime.clusterframework.ApplicationStatus;
 import org.apache.flink.runtime.clusterframework.BootstrapTools;
@@ -91,6 +93,8 @@ public class KubernetesResourceManager extends ActiveResourceManager<KubernetesW
 	/** The number of pods requested, but not yet granted. */
 	private int numPendingPodRequests = 0;
 
+	private KubernetesWatch podsWatch;
+
 	public KubernetesResourceManager(
 			RpcService rpcService,
 			String resourceManagerEndpointId,
@@ -139,7 +143,11 @@ public class KubernetesResourceManager extends ActiveResourceManager<KubernetesW
 	protected void initialize() throws ResourceManagerException {
 		recoverWorkerNodesFromPreviousAttempts();
 
-		kubeClient.watchPodsAndDoCallback(KubernetesUtils.getTaskManagerLabels(clusterId), this);
+		podsWatch = kubeClient.watchPodsAndDoCallback(
+			KubernetesUtils.getTaskManagerLabels(clusterId),
+			new KubernetesPodsWatcher(
+				this,
+				e -> onFatalError(new ResourceManagerException("The pods watcher is closing with exception.", e))));
 	}
 
 	@Override
@@ -148,6 +156,7 @@ public class KubernetesResourceManager extends ActiveResourceManager<KubernetesW
 		Throwable exception = null;
 
 		try {
+			podsWatch.close();
 			kubeClient.close();
 		} catch (Throwable t) {
 			exception = t;
