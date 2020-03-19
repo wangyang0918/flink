@@ -20,9 +20,11 @@ package org.apache.flink.kubernetes.kubeclient.parameters;
 
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.TaskManagerOptions;
+import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
 import org.apache.flink.kubernetes.utils.KubernetesUtils;
 import org.apache.flink.runtime.clusterframework.ContaineredTaskManagerParameters;
 
+import java.util.HashMap;
 import java.util.Map;
 
 import static org.apache.flink.util.Preconditions.checkArgument;
@@ -59,7 +61,9 @@ public class KubernetesTaskManagerParameters extends AbstractKubernetesParameter
 
 	@Override
 	public Map<String, String> getLabels() {
-		return KubernetesUtils.getTaskManagerLabels(getClusterId());
+		final Map<String, String> labels = new HashMap<>(KubernetesUtils.getTaskManagerLabels(getClusterId()));
+		flinkConfig.getOptional(KubernetesConfigOptions.TASK_MANAGER_LABELS).ifPresent(labels::putAll);
+		return labels;
 	}
 
 	@Override

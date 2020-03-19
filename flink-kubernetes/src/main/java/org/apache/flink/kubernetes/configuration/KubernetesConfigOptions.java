@@ -22,6 +22,7 @@ import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.configuration.ConfigOption;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.apache.flink.configuration.ConfigOptions.key;
 
@@ -99,6 +100,20 @@ public class KubernetesConfigOptions {
 		.stringType()
 		.defaultValue("%java% %classpath% %jvmmem% %jvmopts% %logging% %class% %args% %redirects%")
 		.withDescription("Template for the kubernetes jobmanager and taskmanager container start invocation.");
+
+	public static final ConfigOption<Map<String, String>> JOB_MANAGER_LABELS =
+		key("kubernetes.jobmanager.labels")
+		.mapType()
+		.noDefaultValue()
+		.withDescription("The labels to be set for JobManager pod. Specified as key:value pairs separated by commas. " +
+			"For example, version:alphav1,deploy:test.");
+
+	public static final ConfigOption<Map<String, String>> TASK_MANAGER_LABELS =
+		key("kubernetes.taskmanager.labels")
+		.mapType()
+		.noDefaultValue()
+		.withDescription("The labels to be set for TaskManager pods. Specified as key:value pairs separated by commas. " +
+			"For example, version:alphav1,deploy:test.");
 
 	public static final ConfigOption<String> CLUSTER_ID =
 		key("kubernetes.cluster-id")
