@@ -64,6 +64,7 @@ public class InitJobManagerDecorator extends AbstractKubernetesStepDecorator {
 			.editOrNewSpec()
 				.withServiceAccountName(kubernetesJobManagerParameters.getServiceAccount())
 				.withImagePullSecrets(kubernetesJobManagerParameters.getImagePullSecrets())
+				.withNodeSelector(kubernetesJobManagerParameters.getNodeSelector())
 				.endSpec()
 			.build();
 

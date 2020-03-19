@@ -24,6 +24,7 @@ import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
 import org.apache.flink.kubernetes.utils.KubernetesUtils;
 import org.apache.flink.runtime.clusterframework.ContaineredTaskManagerParameters;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -64,6 +65,12 @@ public class KubernetesTaskManagerParameters extends AbstractKubernetesParameter
 		final Map<String, String> labels = new HashMap<>(KubernetesUtils.getTaskManagerLabels(getClusterId()));
 		flinkConfig.getOptional(KubernetesConfigOptions.TASK_MANAGER_LABELS).ifPresent(labels::putAll);
 		return labels;
+	}
+
+	@Override
+	public Map<String, String> getNodeSelector() {
+		return Collections.unmodifiableMap(
+			flinkConfig.getOptional(KubernetesConfigOptions.TASK_MANAGER_NODE_SELECTOR).orElse(Collections.emptyMap()));
 	}
 
 	@Override

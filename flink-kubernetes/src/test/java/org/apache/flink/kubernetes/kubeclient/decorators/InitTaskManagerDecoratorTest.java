@@ -41,6 +41,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.core.IsEqual.equalTo;
 import static org.junit.Assert.assertEquals;
 
 /**
@@ -146,5 +149,10 @@ public class InitTaskManagerDecoratorTest extends KubernetesTaskManagerTestBase 
 			.collect(Collectors.toList());
 
 		assertEquals(IMAGE_PULL_SECRETS, resultSecrets);
+	}
+
+	@Test
+	public void testNodeSelector() {
+		assertThat(this.resultPod.getSpec().getNodeSelector(), is(equalTo(nodeSelector)));
 	}
 }

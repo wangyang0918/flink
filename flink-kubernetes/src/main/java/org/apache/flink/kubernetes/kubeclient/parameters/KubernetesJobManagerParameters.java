@@ -61,6 +61,12 @@ public class KubernetesJobManagerParameters extends AbstractKubernetesParameters
 	}
 
 	@Override
+	public Map<String, String> getNodeSelector() {
+		return Collections.unmodifiableMap(
+			flinkConfig.getOptional(KubernetesConfigOptions.JOB_MANAGER_NODE_SELECTOR).orElse(Collections.emptyMap()));
+	}
+
+	@Override
 	public Map<String, String> getEnvironments() {
 		return getPrefixedEnvironments(ResourceManagerOptions.CONTAINERIZED_MASTER_ENV_PREFIX);
 	}
