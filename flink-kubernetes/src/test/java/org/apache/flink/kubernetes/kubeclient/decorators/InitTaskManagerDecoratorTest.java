@@ -133,6 +133,7 @@ public class InitTaskManagerDecoratorTest extends KubernetesTaskManagerTestBase 
 	public void testPodLabels() {
 		final Map<String, String> expectedLabels = new HashMap<>(getCommonLabels());
 		expectedLabels.put(Constants.LABEL_COMPONENT_KEY, Constants.LABEL_COMPONENT_TASK_MANAGER);
+		expectedLabels.putAll(userLabels);
 
 		assertEquals(expectedLabels, this.resultPod.getMetadata().getLabels());
 	}
