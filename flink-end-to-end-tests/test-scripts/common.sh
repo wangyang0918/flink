@@ -252,7 +252,7 @@ function wait_rest_endpoint_up {
   local TIMEOUT=20
   for i in $(seq 1 ${TIMEOUT}); do
     # without the || true this would exit our script if the endpoint is not yet up
-    QUERY_RESULT=$(curl ${CURL_SSL_ARGS} "$query_url" 2> /dev/null || true)
+    QUERY_RESULT=$(curl --connect-timeout 3 ${CURL_SSL_ARGS} "$query_url" 2> /dev/null || true)
 
     # ensure the response adapts with the suceessful regex
     if [[ ${QUERY_RESULT} =~ ${successful_response_regex} ]]; then
