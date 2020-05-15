@@ -72,7 +72,7 @@ class YarnApplicationFileUploader implements AutoCloseable {
 	private final Path homeDir;
 
 	private final Path applicationDir;
-
+	// All files in the provided lib directories, key is relative path and value is remote FileStatus
 	private final Map<String, FileStatus> providedSharedLibs;
 
 	private final Map<String, LocalResource> localResources;
@@ -161,14 +161,8 @@ class YarnApplicationFileUploader implements AutoCloseable {
 			return descriptor;
 		}
 
-		if (isPlugin(resourcePath)) {
-			for (YarnLocalResourceDescriptor desc: plugins) {
-				if (desc.getPath().getName().equals(resourcePath.getName())) {
-					LOG.debug("Using provided plugin file {} instead of the local {}", desc.getPath(), resourcePath);
-					return desc;
-				}
-			}
-		}
+		// COMMENTS wo do not need to check the plugins here. If the provided libs contain plugin,
+		// it has already registered as local resources.
 
 		final File localFile = new File(resourcePath.toUri().getPath());
 		final Tuple2<Path, Long> remoteFileInfo = uploadLocalFileToRemote(resourcePath, relativeDstPath);
@@ -290,8 +284,6 @@ class YarnApplicationFileUploader implements AutoCloseable {
 
 	private YarnLocalResourceDescriptor flinkDist;
 
-	private final List<YarnLocalResourceDescriptor> plugins = new ArrayList<>();
-
 	public YarnLocalResourceDescriptor uploadFlinkDist(final Path localJarPath) throws IOException {
 		if (flinkDist != null) {
 			return flinkDist;
@@ -317,32 +309,22 @@ class YarnApplicationFileUploader implements AutoCloseable {
 
 		final ArrayList<String> classPaths = new ArrayList<>();
 		providedSharedLibs.forEach(
-				(fileName, fileStatus) -> {
-					localResources.put(
-							fileName,
-							Utils.registerLocalResource(
-									fileStatus.getPath(),
-									fileStatus.getLen(),
-									fileStatus.getModificationTime(),
-									LocalResourceVisibility.PUBLIC));
+				// COMMENTS we need to update the localResources, remotePaths, envShipResourceList
+				(key, fileStatus) -> {
+					final Path filePath = fileStatus.getPath();
+					LOG.debug("Using remote file {} to register local resource", filePath);
+					final YarnLocalResourceDescriptor descriptor = YarnLocalResourceDescriptor.fromFileStatus(
+						key,
+						fileStatus,
+						LocalResourceVisibility.PUBLIC);
+					localResources.put(key, descriptor.toLocalResource());
+					remotePaths.add(filePath);
+					envShipResourceList.add(descriptor);
 
-					if (!isFlinkDistJar(fileName) && !isPlugin(fileStatus.getPath())) {
-						classPaths.add(fileName);
-					} else if (isFlinkDistJar(fileName)) {
-						flinkDist = new YarnLocalResourceDescriptor(
-								fileName,
-								fileStatus.getPath(),
-								fileStatus.getLen(),
-								fileStatus.getModificationTime(),
-								LocalResourceVisibility.PUBLIC);
-					} else if (isPlugin(fileStatus.getPath())) {
-						final YarnLocalResourceDescriptor plugin = new YarnLocalResourceDescriptor(
-								fileName,
-								fileStatus.getPath(),
-								fileStatus.getLen(),
-								fileStatus.getModificationTime(),
-								LocalResourceVisibility.PUBLIC);
-						plugins.add(plugin);
+					if (!isFlinkDistJar(filePath.getName()) && !isPlugin(filePath)) {
+						classPaths.add(key);
+					} else if (isFlinkDistJar(filePath.getName())) {
+						flinkDist = descriptor;
 					}
 				});
 		return classPaths;
@@ -435,8 +417,8 @@ class YarnApplicationFileUploader implements AutoCloseable {
 						final RemoteIterator<LocatedFileStatus> iterable = fileSystem.listFiles(path, true);
 						while (iterable.hasNext()) {
 							final LocatedFileStatus locatedFileStatus = iterable.next();
-
-							final String name = path.toUri().relativize(locatedFileStatus.getPath().toUri()).toString();
+							// COMMENTS we need to use the parent directory
+							final String name = path.getParent().toUri().relativize(locatedFileStatus.getPath().toUri()).toString();
 
 							final FileStatus prevMapping = allFiles.put(name, locatedFileStatus);
 							if (prevMapping != null) {

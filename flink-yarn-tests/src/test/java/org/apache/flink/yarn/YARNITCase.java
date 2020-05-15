@@ -107,7 +107,7 @@ public class YARNITCase extends YarnTestBase {
 	private void deployPerJob(Configuration configuration, JobGraph jobGraph, boolean withDist) throws Exception {
 		try (final YarnClusterDescriptor yarnClusterDescriptor = withDist
 				? createYarnClusterDescriptor(configuration)
-				: createYarnClusterDescriptorWithoutFlinkDist(flinkConfiguration)) {
+				: createYarnClusterDescriptorWithoutLibDir(configuration)) {
 
 			final int masterMemory = yarnClusterDescriptor.getFlinkConfiguration().get(JobManagerOptions.TOTAL_PROCESS_MEMORY).getMebiBytes();
 			final ClusterSpecification clusterSpecification = new ClusterSpecification.ClusterSpecificationBuilder()
