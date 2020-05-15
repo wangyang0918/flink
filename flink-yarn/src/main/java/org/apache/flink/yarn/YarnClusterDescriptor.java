@@ -701,8 +701,6 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 			systemShipFiles.add(new File(logConfigFilePath));
 		}
 
-		addLibFoldersToShipFiles(systemShipFiles);
-
 		// Plugin files only need to be shipped and should not be added to classpath.
 		addPluginsFoldersToShipFiles(shipOnlyFiles);
 
@@ -760,6 +758,10 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 			}
 
 			jobGraph.writeUserArtifactEntriesToConfiguration();
+		}
+
+		if (providedLibDirs == null || providedLibDirs.isEmpty()) {
+			addLibFoldersToShipFiles(systemShipFiles);
 		}
 
 		// Register all files in provided lib dirs as local resources with public visibility
