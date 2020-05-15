@@ -341,10 +341,6 @@ class YarnApplicationFileUploader implements AutoCloseable {
 								LocalResourceVisibility.PUBLIC);
 					}
 				});
-
-		checkState(flinkDist != null,
-				"No flink dist jar found in the " + YarnConfigOptions.PROVIDED_LIB_DIRS.key());
-
 		return classPaths;
 	}
 
