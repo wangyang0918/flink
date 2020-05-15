@@ -690,8 +690,6 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 
 		// The files need to be shipped and added to classpath.
 		Set<File> systemShipFiles = new HashSet<>(shipFiles.size());
-		// The files only need to be shipped.
-		Set<File> shipOnlyFiles = new HashSet<>();
 		for (File file : shipFiles) {
 			systemShipFiles.add(file.getAbsoluteFile());
 		}
@@ -700,9 +698,6 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 		if (logConfigFilePath != null) {
 			systemShipFiles.add(new File(logConfigFilePath));
 		}
-
-		// Plugin files only need to be shipped and should not be added to classpath.
-		addPluginsFoldersToShipFiles(shipOnlyFiles);
 
 		// Set-up ApplicationSubmissionContext for the application
 
@@ -773,9 +768,14 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 		systemClassPaths.addAll(uploadedDependencies);
 
 		// upload and register ship-only files
-		fileUploader.registerMultipleLocalResources(
-			shipOnlyFiles.stream().map(e -> new Path(e.toURI())).collect(Collectors.toSet()),
-			Path.CUR_DIR);
+		// Plugin files only need to be shipped and should not be added to classpath.
+		if (providedLibDirs == null || providedLibDirs.isEmpty()) {
+			Set<File> shipOnlyFiles = new HashSet<>();
+			addPluginsFoldersToShipFiles(shipOnlyFiles);
+			fileUploader.registerMultipleLocalResources(
+					shipOnlyFiles.stream().map(e -> new Path(e.toURI())).collect(Collectors.toSet()),
+					Path.CUR_DIR);
+		}
 
 		// Upload and register user jars
 		final List<String> userClassPaths = fileUploader.registerMultipleLocalResources(

@@ -21,7 +21,6 @@ package org.apache.flink.yarn;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.util.IOUtils;
 import org.apache.flink.util.function.FunctionUtils;
-import org.apache.flink.yarn.configuration.YarnConfigOptions;
 
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
@@ -57,7 +56,6 @@ import java.util.stream.Collectors;
 
 import static org.apache.flink.util.Preconditions.checkArgument;
 import static org.apache.flink.util.Preconditions.checkNotNull;
-import static org.apache.flink.util.Preconditions.checkState;
 
 /**
  * A class with utilities for uploading files
@@ -163,14 +161,13 @@ class YarnApplicationFileUploader implements AutoCloseable {
 			return descriptor;
 		}
 
-		final FileStatus fileStatus = providedSharedLibs.get(resourcePath.getName());
-		if (fileStatus != null) {
-			LOG.debug("Using provided file {} instead of the local {}", fileStatus.getPath(), resourcePath);
-
-			final YarnLocalResourceDescriptor descriptor = YarnLocalResourceDescriptor
-				.fromFileStatus(fileStatus.getPath().getName(), fileStatus, LocalResourceVisibility.PUBLIC);
-			addToEnvShipResourceList(whetherToAddToEnvShipResourceList, descriptor);
-			return descriptor;
+		if (isPlugin(resourcePath)) {
+			for (YarnLocalResourceDescriptor desc: plugins) {
+				if (desc.getPath().getName().equals(resourcePath.getName())) {
+					LOG.debug("Using provided plugin file {} instead of the local {}", desc.getPath(), resourcePath);
+					return desc;
+				}
+			}
 		}
 
 		final File localFile = new File(resourcePath.toUri().getPath());
@@ -293,6 +290,8 @@ class YarnApplicationFileUploader implements AutoCloseable {
 
 	private YarnLocalResourceDescriptor flinkDist;
 
+	private final List<YarnLocalResourceDescriptor> plugins = new ArrayList<>();
+
 	public YarnLocalResourceDescriptor uploadFlinkDist(final Path localJarPath) throws IOException {
 		if (flinkDist != null) {
 			return flinkDist;
@@ -330,15 +329,23 @@ class YarnApplicationFileUploader implements AutoCloseable {
 									fileStatus.getModificationTime(),
 									LocalResourceVisibility.PUBLIC));
 
-					if (!isFlinkDistJar(fileName)) {
+					if (!isFlinkDistJar(fileName) && !isPlugin(fileStatus.getPath())) {
 						classPaths.add(key);
-					} else {
+					} else if (isFlinkDistJar(fileName)) {
 						flinkDist = new YarnLocalResourceDescriptor(
 								key,
 								fileStatus.getPath(),
 								fileStatus.getLen(),
 								fileStatus.getModificationTime(),
 								LocalResourceVisibility.PUBLIC);
+					} else if (isPlugin(fileStatus.getPath())) {
+						final YarnLocalResourceDescriptor plugin = new YarnLocalResourceDescriptor(
+								key,
+								fileStatus.getPath(),
+								fileStatus.getLen(),
+								fileStatus.getModificationTime(),
+								LocalResourceVisibility.PUBLIC);
+						plugins.add(plugin);
 					}
 				});
 		return classPaths;
@@ -393,6 +400,18 @@ class YarnApplicationFileUploader implements AutoCloseable {
 
 	private static boolean isFlinkDistJar(String fileName) {
 		return fileName.startsWith("flink-dist") && fileName.endsWith("jar");
+	}
+
+	private static boolean isPlugin(Path path) {
+		Path parent = path.getParent();
+		while (parent != null) {
+			if (parent.getName().equals("plugins")) {
+				return true;
+			}
+			parent = parent.getParent();
+		}
+
+		return false;
 	}
 
 	static Path getApplicationDirPath(final Path homeDir, final ApplicationId applicationId) {
