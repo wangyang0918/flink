@@ -318,11 +318,8 @@ class YarnApplicationFileUploader implements AutoCloseable {
 		final ArrayList<String> classPaths = new ArrayList<>();
 		providedSharedLibs.forEach(
 				(fileName, fileStatus) -> {
-					final Path remotePath = fileStatus.getPath();
-					final Path appDir = getApplicationDir();
-					final String key = appDir.toUri().relativize(remotePath.toUri()).toString();
 					localResources.put(
-							key,
+							fileName,
 							Utils.registerLocalResource(
 									fileStatus.getPath(),
 									fileStatus.getLen(),
@@ -330,17 +327,17 @@ class YarnApplicationFileUploader implements AutoCloseable {
 									LocalResourceVisibility.PUBLIC));
 
 					if (!isFlinkDistJar(fileName) && !isPlugin(fileStatus.getPath())) {
-						classPaths.add(key);
+						classPaths.add(fileName);
 					} else if (isFlinkDistJar(fileName)) {
 						flinkDist = new YarnLocalResourceDescriptor(
-								key,
+								fileName,
 								fileStatus.getPath(),
 								fileStatus.getLen(),
 								fileStatus.getModificationTime(),
 								LocalResourceVisibility.PUBLIC);
 					} else if (isPlugin(fileStatus.getPath())) {
 						final YarnLocalResourceDescriptor plugin = new YarnLocalResourceDescriptor(
-								key,
+								fileName,
 								fileStatus.getPath(),
 								fileStatus.getLen(),
 								fileStatus.getModificationTime(),
@@ -438,9 +435,10 @@ class YarnApplicationFileUploader implements AutoCloseable {
 						final RemoteIterator<LocatedFileStatus> iterable = fileSystem.listFiles(path, true);
 						while (iterable.hasNext()) {
 							final LocatedFileStatus locatedFileStatus = iterable.next();
-							final String fileName = locatedFileStatus.getPath().getName();
 
-							final FileStatus prevMapping = allFiles.put(fileName, locatedFileStatus);
+							final String name = path.toUri().relativize(locatedFileStatus.getPath().toUri()).toString();
+
+							final FileStatus prevMapping = allFiles.put(name, locatedFileStatus);
 							if (prevMapping != null) {
 								throw new IOException(
 									"Two files with the same filename exist in the shared libs: " +

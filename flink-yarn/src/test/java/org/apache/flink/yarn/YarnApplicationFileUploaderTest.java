@@ -56,17 +56,13 @@ public class YarnApplicationFileUploaderTest extends TestLogger {
 		final File flinkLibDir = temporaryFolder.newFolder();
 		final Map<String, String> libJars = getLibJars();
 
-		final ApplicationId applicationId = ApplicationId.newInstance(0, 0);
-		final Path homeDir = new Path(flinkLibDir.toURI());
-		final Path applicationDir = YarnApplicationFileUploader
-				.getApplicationDirPath(homeDir, applicationId);
-		generateFilesInDirectory(new File(applicationDir.toUri()), libJars);
+		generateFilesInDirectory(flinkLibDir, libJars);
 
 		try (final YarnApplicationFileUploader yarnApplicationFileUploader = YarnApplicationFileUploader.from(
 				FileSystem.get(new YarnConfiguration()),
-				homeDir,
+				new Path(temporaryFolder.getRoot().toURI()),
 				Collections.singletonList(new Path(flinkLibDir.toURI())),
-				applicationId,
+				ApplicationId.newInstance(0, 0),
 				DFSConfigKeys.DFS_REPLICATION_DEFAULT)) {
 
 			yarnApplicationFileUploader.registerProvidedLocalResources();
