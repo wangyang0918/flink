@@ -21,6 +21,7 @@ package org.apache.flink.yarn;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.util.IOUtils;
 import org.apache.flink.util.function.FunctionUtils;
+import org.apache.flink.yarn.configuration.YarnConfigOptions;
 
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
@@ -56,6 +57,7 @@ import java.util.stream.Collectors;
 
 import static org.apache.flink.util.Preconditions.checkArgument;
 import static org.apache.flink.util.Preconditions.checkNotNull;
+import static org.apache.flink.util.Preconditions.checkState;
 
 /**
  * A class with utilities for uploading files
@@ -289,6 +291,22 @@ class YarnApplicationFileUploader implements AutoCloseable {
 		return classPaths;
 	}
 
+	private YarnLocalResourceDescriptor flinkDist;
+
+	public YarnLocalResourceDescriptor uploadFlinkDist(final Path localJarPath) throws IOException {
+		if (flinkDist != null) {
+			return flinkDist;
+		}
+
+		flinkDist = registerSingleLocalResource(
+				localJarPath.getName(),
+				localJarPath,
+				"",
+				true,
+				false);
+		return flinkDist;
+	}
+
 	/**
 	 * Register all the files in the provided lib directories as Yarn local resources with PUBLIC visibility, which
 	 * means that they will be cached in the nodes and reused by different applications.
@@ -314,8 +332,19 @@ class YarnApplicationFileUploader implements AutoCloseable {
 
 					if (!isFlinkDistJar(fileName)) {
 						classPaths.add(key);
+					} else {
+						flinkDist = new YarnLocalResourceDescriptor(
+								key,
+								fileStatus.getPath(),
+								fileStatus.getLen(),
+								fileStatus.getModificationTime(),
+								LocalResourceVisibility.PUBLIC);
 					}
 				});
+
+		checkState(flinkDist != null,
+				"No flink dist jar found in the " + YarnConfigOptions.PROVIDED_LIB_DIRS.key());
+
 		return classPaths;
 	}
 

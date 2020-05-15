@@ -803,14 +803,8 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 		}
 
 		// Setup jar for ApplicationMaster
-		final YarnLocalResourceDescriptor localResourceDescFlinkJar = fileUploader.registerSingleLocalResource(
-			flinkJarPath.getName(),
-			flinkJarPath,
-			"",
-			true,
-			false);
-
-		classPathBuilder.append(flinkJarPath.getName()).append(File.pathSeparator);
+		final YarnLocalResourceDescriptor localResourceDescFlinkJar = fileUploader.uploadFlinkDist(flinkJarPath);
+		classPathBuilder.append(localResourceDescFlinkJar.getResourceKey()).append(File.pathSeparator);
 
 		// write job graph to tmp file and add it to local resource
 		// TODO: server use user main method to generate job graph
