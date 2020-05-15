@@ -300,19 +300,22 @@ class YarnApplicationFileUploader implements AutoCloseable {
 
 		final ArrayList<String> classPaths = new ArrayList<>();
 		providedSharedLibs.forEach(
-			(fileName, fileStatus) -> {
-				localResources.put(
-					fileName,
-					Utils.registerLocalResource(
-						fileStatus.getPath(),
-						fileStatus.getLen(),
-						fileStatus.getModificationTime(),
-						LocalResourceVisibility.PUBLIC));
+				(fileName, fileStatus) -> {
+					final Path remotePath = fileStatus.getPath();
+					final Path appDir = getApplicationDir();
+					final String key = appDir.toUri().relativize(remotePath.toUri()).toString();
+					localResources.put(
+							key,
+							Utils.registerLocalResource(
+									fileStatus.getPath(),
+									fileStatus.getLen(),
+									fileStatus.getModificationTime(),
+									LocalResourceVisibility.PUBLIC));
 
-				if (!isFlinkDistJar(fileName)) {
-					classPaths.add(fileName);
-				}
-			});
+					if (!isFlinkDistJar(fileName)) {
+						classPaths.add(key);
+					}
+				});
 		return classPaths;
 	}
 
