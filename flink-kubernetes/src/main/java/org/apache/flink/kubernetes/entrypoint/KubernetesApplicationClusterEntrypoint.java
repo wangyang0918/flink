@@ -76,7 +76,11 @@ public final class KubernetesApplicationClusterEntrypoint extends ApplicationClu
 
 		configuration.set(DeploymentOptions.TARGET, EmbeddedExecutor.NAME);
 		ConfigUtils.encodeCollectionToConfig(configuration, PipelineOptions.JARS, program.getJobJarAndDependencies(), URL::toString);
-		ConfigUtils.encodeCollectionToConfig(configuration, PipelineOptions.CLASSPATHS, program.getClasspaths(), URL::toString);
+		try {
+			configureExecution(configuration, program);
+		} catch (Exception e) {
+			LOG.error("Could not apply application configuration.", e);
+		}
 
 		final KubernetesApplicationClusterEntrypoint kubernetesApplicationClusterEntrypoint =
 			new KubernetesApplicationClusterEntrypoint(configuration, program);

@@ -44,6 +44,7 @@ import javax.annotation.Nullable;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.MalformedURLException;
 import java.net.URL;
 
 import static org.apache.flink.runtime.util.ClusterEntrypointUtils.tryFindUserLibDirectory;
@@ -89,7 +90,11 @@ public final class StandaloneApplicationClusterEntryPoint extends ApplicationClu
 		Configuration configuration = loadConfigurationFromClusterConfig(clusterConfiguration);
 		configuration.set(DeploymentOptions.TARGET, EmbeddedExecutor.NAME);
 		ConfigUtils.encodeCollectionToConfig(configuration, PipelineOptions.JARS, program.getJobJarAndDependencies(), URL::toString);
-		ConfigUtils.encodeCollectionToConfig(configuration, PipelineOptions.CLASSPATHS, program.getClasspaths(), URL::toString);
+		try {
+			configureExecution(configuration, program);
+		} catch (Exception e) {
+			LOG.error("Could not apply application configuration.", e);
+		}
 
 		StandaloneApplicationClusterEntryPoint entrypoint = new StandaloneApplicationClusterEntryPoint(configuration, program);
 
