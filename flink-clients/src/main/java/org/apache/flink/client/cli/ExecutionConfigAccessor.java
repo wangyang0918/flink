@@ -72,22 +72,16 @@ public class ExecutionConfigAccessor {
 		return baseConfiguration;
 	}
 
-	public List<URL> getJars() {
+	public List<URL> getJars() throws MalformedURLException {
 		return decodeUrlList(configuration, PipelineOptions.JARS);
 	}
 
-	public List<URL> getClasspaths() {
+	public List<URL> getClasspaths() throws MalformedURLException {
 		return decodeUrlList(configuration, PipelineOptions.CLASSPATHS);
 	}
 
-	private List<URL> decodeUrlList(final Configuration configuration, final ConfigOption<List<String>> configOption) {
-		return ConfigUtils.decodeListFromConfig(configuration, configOption, url -> {
-			try {
-				return new URL(url);
-			} catch (MalformedURLException e) {
-				throw new IllegalArgumentException("Invalid URL", e);
-			}
-		});
+	private List<URL> decodeUrlList(final Configuration configuration, final ConfigOption<List<String>> configOption) throws MalformedURLException {
+		return ConfigUtils.decodeListFromConfig(configuration, configOption, URL::new);
 	}
 
 	public int getParallelism() {
