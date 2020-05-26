@@ -19,7 +19,6 @@
 package org.apache.flink.yarn.configuration;
 
 import org.apache.flink.annotation.Internal;
-import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.configuration.Configuration;
 
 import org.apache.hadoop.yarn.api.ApplicationConstants;
@@ -42,21 +41,7 @@ public class YarnLogConfigUtil {
 	public static final String CONFIG_FILE_LOGBACK_NAME = "logback.xml";
 	public static final String CONFIG_FILE_LOG4J_NAME = "log4j.properties";
 
-	@VisibleForTesting
-	public static Configuration setLogConfigFileInConfig(
-			final Configuration configuration,
-			final String configurationDirectory) {
-
-		if (configuration.getString(YarnConfigOptionsInternal.APPLICATION_LOG_CONFIG_FILE) != null) {
-			return configuration;
-		}
-
-		discoverLogConfigFile(configurationDirectory).ifPresent(file ->
-				configuration.setString(YarnConfigOptionsInternal.APPLICATION_LOG_CONFIG_FILE, file.getPath()));
-		return configuration;
-	}
-
-	private static Optional<File> discoverLogConfigFile(final String configurationDirectory) {
+	public static Optional<File> discoverLogConfigFile(final String configurationDirectory) {
 		Optional<File> logConfigFile = Optional.empty();
 
 		final File log4jFile = new File(configurationDirectory + File.separator + CONFIG_FILE_LOG4J_NAME);

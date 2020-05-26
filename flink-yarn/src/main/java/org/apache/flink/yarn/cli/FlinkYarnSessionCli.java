@@ -44,7 +44,6 @@ import org.apache.flink.util.FlinkException;
 import org.apache.flink.util.ShutdownHookUtil;
 import org.apache.flink.yarn.YarnClusterDescriptor;
 import org.apache.flink.yarn.configuration.YarnConfigOptions;
-import org.apache.flink.yarn.configuration.YarnLogConfigUtil;
 import org.apache.flink.yarn.executors.YarnJobClusterExecutor;
 import org.apache.flink.yarn.executors.YarnSessionClusterExecutor;
 
@@ -432,8 +431,6 @@ public class FlinkYarnSessionCli extends AbstractCustomCommandLine {
 			final String nodeLabelValue = commandLine.getOptionValue(this.nodeLabel.getOpt());
 			configuration.setString(YarnConfigOptions.NODE_LABEL, nodeLabelValue);
 		}
-
-		YarnLogConfigUtil.setLogConfigFileInConfig(configuration, configurationDirectory);
 	}
 
 	private boolean isYarnPropertiesFileMode(CommandLine commandLine) {

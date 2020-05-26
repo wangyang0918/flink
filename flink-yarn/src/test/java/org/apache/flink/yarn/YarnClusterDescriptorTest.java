@@ -555,9 +555,9 @@ public class YarnClusterDescriptorTest extends TestLogger {
 	}
 
 	private YarnClusterDescriptor createYarnClusterDescriptor(Configuration configuration) {
-		YarnTestUtils.configureLogFile(configuration, temporaryFolder.getRoot().getAbsolutePath());
 
 		return YarnClusterDescriptorBuilder.newBuilder(yarnClient, true)
+			.setFlinkConfigurationDir(temporaryFolder.getRoot().getAbsolutePath())
 			.setFlinkConfiguration(configuration)
 			.setYarnConfiguration(yarnConfiguration)
 			.setYarnClusterInformationRetriever(() -> YARN_MAX_VCORES)

@@ -36,6 +36,8 @@ public final class YarnClusterDescriptorBuilder {
 	private Configuration flinkConfiguration = new Configuration();
 	private YarnConfiguration yarnConfiguration = new YarnConfiguration();
 
+	private String configurationDir;
+
 	@Nullable
 	private YarnClusterInformationRetriever yarnClusterInformationRetriever = null;
 
@@ -59,6 +61,11 @@ public final class YarnClusterDescriptorBuilder {
 		return this;
 	}
 
+	public YarnClusterDescriptorBuilder setFlinkConfigurationDir(String configurationDir) {
+		this.configurationDir = configurationDir;
+		return this;
+	}
+
 	public YarnClusterDescriptor build() {
 		final YarnClusterInformationRetriever clusterInformationRetriever;
 
@@ -69,6 +76,7 @@ public final class YarnClusterDescriptorBuilder {
 		}
 
 		return new YarnClusterDescriptor(
+			configurationDir,
 			flinkConfiguration,
 			yarnConfiguration,
 			yarnClient,

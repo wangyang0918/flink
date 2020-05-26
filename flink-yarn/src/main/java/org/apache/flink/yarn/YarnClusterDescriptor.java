@@ -21,7 +21,6 @@ package org.apache.flink.yarn;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.cache.DistributedCache;
 import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.client.cli.CliFrontend;
 import org.apache.flink.client.deployment.ClusterDeploymentException;
 import org.apache.flink.client.deployment.ClusterDescriptor;
 import org.apache.flink.client.deployment.ClusterRetrieveException;
@@ -143,6 +142,8 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 
 	private Path flinkJarPath;
 
+	private final String configurationDir;
+
 	private final Configuration flinkConfiguration;
 
 	private final String customName;
@@ -156,12 +157,14 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 	private YarnConfigOptions.UserJarInclusion userJarInclusion;
 
 	public YarnClusterDescriptor(
+			String configurationDir,
 			Configuration flinkConfiguration,
 			YarnConfiguration yarnConfiguration,
 			YarnClient yarnClient,
 			YarnClusterInformationRetriever yarnClusterInformationRetriever,
 			boolean sharedYarnClient) {
 
+		this.configurationDir = configurationDir;
 		this.yarnConfiguration = Preconditions.checkNotNull(yarnConfiguration);
 		this.yarnClient = Preconditions.checkNotNull(yarnClient);
 		this.yarnClusterInformationRetriever = Preconditions.checkNotNull(yarnClusterInformationRetriever);
@@ -404,9 +407,6 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 
 		final List<String> pipelineJars = flinkConfiguration.getOptional(PipelineOptions.JARS).orElse(Collections.emptyList());
 		Preconditions.checkArgument(pipelineJars.size() == 1, "Should only have one jar");
-
-		final String configurationDirectory = CliFrontend.getConfigurationDirectoryFromEnv();
-		YarnLogConfigUtil.setLogConfigFileInConfig(flinkConfiguration, configurationDirectory);
 
 		try {
 			return deployInternal(
@@ -694,9 +694,14 @@ public class YarnClusterDescriptor implements ClusterDescriptor<ApplicationId> {
 			systemShipFiles.add(file.getAbsoluteFile());
 		}
 
-		final String logConfigFilePath = configuration.getString(YarnConfigOptionsInternal.APPLICATION_LOG_CONFIG_FILE);
-		if (logConfigFilePath != null) {
-			systemShipFiles.add(new File(logConfigFilePath));
+		final Optional<File> logConfigFile = YarnLogConfigUtil.discoverLogConfigFile(configurationDir);
+		if (logConfigFile.isPresent()) {
+			configuration.setString(
+				YarnConfigOptionsInternal.APPLICATION_LOG_CONFIG_FILE,
+				logConfigFile.get().getAbsolutePath());
+			systemShipFiles.add(logConfigFile.get());
+		} else {
+			LOG.warn("Could not find log4j or logback configuration files under {}.", configurationDir);
 		}
 
 		// Set-up ApplicationSubmissionContext for the application

@@ -19,6 +19,7 @@
 package org.apache.flink.yarn;
 
 import org.apache.flink.annotation.Internal;
+import org.apache.flink.client.cli.CliFrontend;
 import org.apache.flink.client.deployment.AbstractContainerizedClusterClientFactory;
 import org.apache.flink.client.deployment.ClusterClientFactory;
 import org.apache.flink.configuration.Configuration;
@@ -69,7 +70,10 @@ public class YarnClusterClientFactory extends AbstractContainerizedClusterClient
 		yarnClient.init(yarnConfiguration);
 		yarnClient.start();
 
+		final String configurationDirectory = CliFrontend.getConfigurationDirectoryFromEnv();
+
 		return new YarnClusterDescriptor(
+				configurationDirectory,
 				configuration,
 				yarnConfiguration,
 				yarnClient,
