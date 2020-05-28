@@ -20,15 +20,22 @@ package org.apache.flink.kubernetes.kubeclient;
 
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
+import org.apache.flink.kubernetes.configuration.KubernetesHighAvailabilityOptions;
 import org.apache.flink.kubernetes.kubeclient.decorators.ExternalServiceDecorator;
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMapWatcher;
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesLeaderElector;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPodsWatcher;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesService;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesWatch;
 import org.apache.flink.kubernetes.utils.Constants;
 import org.apache.flink.kubernetes.utils.KubernetesUtils;
+import org.apache.flink.runtime.concurrent.FutureUtils;
 import org.apache.flink.util.ExecutorUtils;
 
+import io.fabric8.kubernetes.api.model.ConfigMap;
+import io.fabric8.kubernetes.api.model.ConfigMapBuilder;
 import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.LoadBalancerStatus;
 import io.fabric8.kubernetes.api.model.OwnerReference;
@@ -38,6 +45,7 @@ import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.ServicePort;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.NamespacedKubernetesClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -64,6 +72,7 @@ public class Fabric8FlinkKubeClient implements FlinkKubeClient {
 	private final KubernetesClient internalClient;
 	private final String clusterId;
 	private final String namespace;
+	private final int retryMaxAttempts;
 
 	private final ExecutorService kubeClientExecutorService;
 
@@ -75,6 +84,7 @@ public class Fabric8FlinkKubeClient implements FlinkKubeClient {
 		this.clusterId = checkNotNull(flinkConfig.getString(KubernetesConfigOptions.CLUSTER_ID));
 
 		this.namespace = flinkConfig.getString(KubernetesConfigOptions.NAMESPACE);
+		this.retryMaxAttempts = flinkConfig.getInteger(KubernetesHighAvailabilityOptions.KUBERNETES_MAX_RETRY_ATTEMPTS);
 
 		this.kubeClientExecutorService = asyncExecutorFactory.get();
 	}
@@ -210,11 +220,76 @@ public class Fabric8FlinkKubeClient implements FlinkKubeClient {
 	}
 
 	@Override
-	public KubernetesWatch watchPodsAndDoCallback(Map<String, String> labels, PodCallbackHandler podCallbackHandler) {
+	public KubernetesWatch watchPodsAndDoCallback(
+			Map<String, String> labels,
+			WatchCallbackHandler<KubernetesPod> podCallbackHandler) {
 		return new KubernetesWatch(
 			this.internalClient.pods()
 				.withLabels(labels)
 				.watch(new KubernetesPodsWatcher(podCallbackHandler)));
+	}
+
+	@Override
+	public KubernetesLeaderElector createLeaderElector(
+			KubernetesLeaderElectionConfiguration leaderElectionConfiguration,
+			KubernetesLeaderElector.LeaderCallbackHandler leaderCallbackHandler) {
+		return new KubernetesLeaderElector(
+			(NamespacedKubernetesClient) this.internalClient,
+			namespace,
+			leaderElectionConfiguration,
+			leaderCallbackHandler);
+	}
+
+	@Override
+	public Optional<KubernetesConfigMap> getConfigMap(String name) {
+		final ConfigMap configMap = this.internalClient.configMaps().inNamespace(namespace).withName(name).get();
+		return configMap == null ? Optional.empty() : Optional.of(new KubernetesConfigMap(configMap));
+	}
+
+	@Override
+	public CompletableFuture<Void> createConfigMap(String name, Map<String, String> data, String type) {
+		final ConfigMap current = this.internalClient.configMaps().inNamespace(namespace).withName(name).get();
+		if (current == null) {
+			final ConfigMap configMap = new ConfigMapBuilder()
+				.withApiVersion(Constants.API_VERSION)
+				.withNewMetadata()
+				.withName(name)
+				.withLabels(KubernetesUtils.getConfigMapLabels(clusterId, type))
+				.endMetadata()
+				.withData(data)
+				.build();
+			return CompletableFuture.runAsync(
+				() -> this.internalClient.configMaps()
+					.inNamespace(namespace)
+					.withName(name)
+					.createOrReplace(configMap),
+				kubeClientExecutorService);
+		}
+		LOG.warn("ConfigMap {} already exists.", name);
+		return FutureUtils.completedVoidFuture();
+	}
+
+	@Override
+	public CompletableFuture<Void> updateConfigMap(KubernetesConfigMap configMap) {
+		checkNotNull(configMap);
+		return CompletableFuture.runAsync(
+			() -> this.internalClient.configMaps()
+				.inNamespace(namespace)
+				.createOrReplace(configMap.getInternalResource()),
+			kubeClientExecutorService);
+	}
+
+	@Override
+	public KubernetesWatch watchConfigMapsAndDoCallback(
+			String name,
+			WatchCallbackHandler<KubernetesConfigMap> callbackHandler) {
+		return new KubernetesWatch(
+			this.internalClient.configMaps().withName(name).watch(new KubernetesConfigMapWatcher(callbackHandler)));
+	}
+
+	@Override
+	public void deleteConfigMapsByLabels(Map<String, String> labels) {
+		this.internalClient.configMaps().withLabels(labels).delete();
 	}
 
 	@Override

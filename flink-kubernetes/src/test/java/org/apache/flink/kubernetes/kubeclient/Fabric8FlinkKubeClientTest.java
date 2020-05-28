@@ -30,7 +30,9 @@ import org.apache.flink.kubernetes.entrypoint.KubernetesSessionClusterEntrypoint
 import org.apache.flink.kubernetes.kubeclient.decorators.ExternalServiceDecorator;
 import org.apache.flink.kubernetes.kubeclient.factory.KubernetesJobManagerFactory;
 import org.apache.flink.kubernetes.kubeclient.parameters.KubernetesJobManagerParameters;
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
+import org.apache.flink.kubernetes.utils.KubernetesUtils;
 
 import io.fabric8.kubernetes.api.model.ConfigMap;
 import io.fabric8.kubernetes.api.model.HasMetadata;
@@ -41,12 +43,16 @@ import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import org.junit.Test;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
 import static org.apache.flink.kubernetes.utils.Constants.CONFIG_FILE_LOG4J_NAME;
 import static org.apache.flink.kubernetes.utils.Constants.CONFIG_FILE_LOGBACK_NAME;
+import static org.apache.flink.kubernetes.utils.Constants.LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY;
+import static org.apache.flink.kubernetes.utils.Constants.LEADER_ADDRESS_KEY;
 import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -67,6 +73,10 @@ public class Fabric8FlinkKubeClientTest extends KubernetesClientTestBase {
 	private static final String SERVICE_ACCOUNT_NAME = "service-test";
 
 	private static final String TASKMANAGER_POD_NAME = "mock-task-manager-pod";
+
+	private static final String LEADER_CONFIG_MAP_NAME = "test-leader-config-map";
+	private static final String LEADER_ADDRESS = "leader-address";
+	private static final String LEADER_ADDRESS_NEW = "leader-address-new";
 
 	private static final String ENTRY_POINT_CLASS = KubernetesSessionClusterEntrypoint.class.getCanonicalName();
 
@@ -248,5 +258,46 @@ public class Fabric8FlinkKubeClientTest extends KubernetesClientTestBase {
 
 		this.flinkKubeClient.stopAndCleanupCluster(CLUSTER_ID);
 		assertTrue(this.kubeClient.apps().deployments().inNamespace(NAMESPACE).list().getItems().isEmpty());
+	}
+
+	@Test
+	public void testCreateAndDeleteConfigMap() throws Exception {
+		this.flinkKubeClient.createJobManagerComponent(this.kubernetesJobManagerSpecification);
+
+		final Map<String, String> data = new HashMap<>();
+		data.put(LEADER_ADDRESS_KEY, LEADER_ADDRESS);
+
+		this.flinkKubeClient.createConfigMap(
+			LEADER_CONFIG_MAP_NAME, data, LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY);
+
+		// Create the same ConfigMap with different data again
+		data.put(LEADER_ADDRESS_KEY, LEADER_ADDRESS_NEW);
+		this.flinkKubeClient.createConfigMap(
+			LEADER_CONFIG_MAP_NAME, data, LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY).get();
+
+		// Check the data should be the old value
+		final Optional<KubernetesConfigMap> optional = this.flinkKubeClient.getConfigMap(LEADER_CONFIG_MAP_NAME);
+		assertThat(optional.isPresent(), is(true));
+		assertThat(LEADER_ADDRESS, is(optional.get().getData().get(LEADER_ADDRESS_KEY)));
+
+		this.flinkKubeClient.deleteConfigMapsByLabels(
+			KubernetesUtils.getConfigMapLabels(CLUSTER_ID, LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY));
+		assertThat(this.flinkKubeClient.getConfigMap(LEADER_CONFIG_MAP_NAME).isPresent(), is(false));
+	}
+
+	@Test
+	public void testGetAndUpdateConfigMap() throws ExecutionException, InterruptedException {
+		final Map<String, String> data = new HashMap<>();
+		data.put(LEADER_ADDRESS_KEY, LEADER_ADDRESS);
+		this.flinkKubeClient.createConfigMap(
+			LEADER_CONFIG_MAP_NAME, data, LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY).get();
+
+		final Optional<KubernetesConfigMap> optional = this.flinkKubeClient.getConfigMap(LEADER_CONFIG_MAP_NAME);
+		assertThat(optional.isPresent(), is(true));
+		optional.get().getData().put(LEADER_ADDRESS_KEY, LEADER_ADDRESS_NEW);
+		this.flinkKubeClient.updateConfigMap(optional.get()).get();
+		final Optional<KubernetesConfigMap> optionalNew = this.flinkKubeClient.getConfigMap(LEADER_CONFIG_MAP_NAME);
+		assertThat(optionalNew.isPresent(), is(true));
+		assertThat(optionalNew.get().getData().get(LEADER_ADDRESS_KEY), is(LEADER_ADDRESS_NEW));
 	}
 }

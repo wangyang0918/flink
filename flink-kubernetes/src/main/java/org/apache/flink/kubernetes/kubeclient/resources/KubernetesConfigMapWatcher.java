@@ -20,37 +20,38 @@ package org.apache.flink.kubernetes.kubeclient.resources;
 
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
 
-import io.fabric8.kubernetes.api.model.Pod;
+import io.fabric8.kubernetes.api.model.ConfigMap;
 
 import java.util.Collections;
 
 /**
- * Watcher for pods in Kubernetes.
+ * Watcher for ConfigMaps in Kubernetes.
  */
-public class KubernetesPodsWatcher extends KubernetesWatcher<Pod, KubernetesPod> {
+public class KubernetesConfigMapWatcher extends KubernetesWatcher<ConfigMap, KubernetesConfigMap> {
 
-	public KubernetesPodsWatcher(FlinkKubeClient.WatchCallbackHandler<KubernetesPod> callbackHandler) {
+	public KubernetesConfigMapWatcher(FlinkKubeClient.WatchCallbackHandler<KubernetesConfigMap> callbackHandler) {
 		super(callbackHandler);
 	}
 
 	@Override
-	public void eventReceived(Action action, Pod pod) {
-		logger.debug("Received {} event for pod {}, details: {}", action, pod.getMetadata().getName(), pod.getStatus());
+	public void eventReceived(Action action, ConfigMap configMap) {
+		logger.debug("Received {} event for configMap {}, details: {}",
+			action, configMap.getMetadata().getName(), configMap.getData());
 		switch (action) {
 			case ADDED:
-				callbackHandler.onAdded(Collections.singletonList(new KubernetesPod(pod)));
+				callbackHandler.onAdded(Collections.singletonList(new KubernetesConfigMap(configMap)));
 				break;
 			case MODIFIED:
-				callbackHandler.onModified(Collections.singletonList(new KubernetesPod(pod)));
+				callbackHandler.onModified(Collections.singletonList(new KubernetesConfigMap(configMap)));
 				break;
 			case ERROR:
-				callbackHandler.onError(Collections.singletonList(new KubernetesPod(pod)));
+				callbackHandler.onError(Collections.singletonList(new KubernetesConfigMap(configMap)));
 				break;
 			case DELETED:
-				callbackHandler.onDeleted(Collections.singletonList(new KubernetesPod(pod)));
+				callbackHandler.onDeleted(Collections.singletonList(new KubernetesConfigMap(configMap)));
 				break;
 			default:
-				logger.debug("Ignore handling {} event for pod {}", action, pod.getMetadata().getName());
+				logger.debug("Ignore handling {} event for configMap {}", action, configMap.getMetadata().getName());
 				break;
 		}
 	}

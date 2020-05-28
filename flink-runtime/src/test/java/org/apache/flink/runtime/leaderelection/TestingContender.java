@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.UUID;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 
 /**
  * {@link LeaderContender} implementation which provides some convenience functions for testing
@@ -54,10 +55,24 @@ public class TestingContender implements LeaderContender {
 	 * @throws TimeoutException
 	 */
 	public void waitForLeader(long timeout) throws TimeoutException {
+		waitFor(this::isLeader, timeout);
+	}
+
+	/**
+	 * Waits until the contender revokes the leader or until the timeout has been exceeded.
+	 *
+	 * @param timeout
+	 * @throws TimeoutException
+	 */
+	public void waitForRevokeLeader(long timeout) throws TimeoutException {
+		waitFor(() -> !isLeader(), timeout);
+	}
+
+	private void waitFor(Supplier<Boolean> supplier, long timeout) throws TimeoutException {
 		long start = System.currentTimeMillis();
 		long curTimeout;
 
-		while (!isLeader() && (curTimeout = timeout - System.currentTimeMillis() + start) > 0) {
+		while (!supplier.get() && (curTimeout = timeout - System.currentTimeMillis() + start) > 0) {
 			synchronized (lock) {
 				try {
 					lock.wait(curTimeout);
@@ -67,9 +82,9 @@ public class TestingContender implements LeaderContender {
 			}
 		}
 
-		if (!isLeader()) {
+		if (!supplier.get()) {
 			throw new TimeoutException("Contender was not elected as the leader within " +
-					timeout + "ms");
+				timeout + "ms");
 		}
 	}
 

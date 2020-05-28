@@ -18,6 +18,8 @@
 
 package org.apache.flink.kubernetes.kubeclient;
 
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesLeaderElector;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesService;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesWatch;
@@ -94,26 +96,89 @@ public interface FlinkKubeClient extends AutoCloseable {
 	void handleException(Exception e);
 
 	/**
-	 * Watch the pods selected by labels and do the {@link PodCallbackHandler}.
+	 * Watch the pods selected by labels and do the {@link WatchCallbackHandler}.
 	 *
 	 * @param labels labels to filter the pods to watch
 	 * @param podCallbackHandler podCallbackHandler which reacts to pod events
 	 * @return Return a watch for pods. It needs to be closed after use.
 	 */
-	KubernetesWatch watchPodsAndDoCallback(Map<String, String> labels, PodCallbackHandler podCallbackHandler);
+	KubernetesWatch watchPodsAndDoCallback(
+		Map<String, String> labels,
+		WatchCallbackHandler<KubernetesPod> podCallbackHandler);
 
 	/**
-	 * Callback handler for kubernetes pods.
+	 * Create a leader elector service based on Kubernetes api.
+	 * @param leaderElectionConfiguration election configuration
+	 * @param leaderCallbackHandler Callback when the current instance is leader or not.
+	 *
+	 * @return Return the created leader elector. It should be started manually via {@code KubernetesLeaderElector#run}.
 	 */
-	interface PodCallbackHandler {
+	KubernetesLeaderElector createLeaderElector(
+		KubernetesLeaderElectionConfiguration leaderElectionConfiguration,
+		KubernetesLeaderElector.LeaderCallbackHandler leaderCallbackHandler);
 
-		void onAdded(List<KubernetesPod> pods);
+	/**
+	 * Create a new ConfigMap with the data.
+	 *
+	 * @param name ConfigMap name
+	 * @param data Data of the ConfigMap. If the ConfigMap already exist, nothing will happen.
+	 * @param type ConfigMap type, currently it could only be high-availability and could be extended in the future.
+	 *
+	 * @return Return the ConfigMap creation future.
+	 */
+	CompletableFuture<Void> createConfigMap(String name, Map<String, String> data, String type);
 
-		void onModified(List<KubernetesPod> pods);
+	/**
+	 * Get the ConfigMap with specified name.
+	 *
+	 * @param name ConfigMap name.
+	 *
+	 * @return Return empty if the ConfigMap does not exist.
+	 */
+	Optional<KubernetesConfigMap> getConfigMap(String name);
 
-		void onDeleted(List<KubernetesPod> pods);
+	/**
+	 * Update an existing ConfigMap with the data.
+	 *
+	 * @param configMap ConfigMap to be replaced with. Benefit from <a href=https://kubernetes.io/docs/reference/using-api/api-concepts/#resource-versions>
+	 *                  resource version</a> and combined with {@link #getConfigMap(String)}, we could perform a get-and-update
+	 *                  transactional operation. Since concurrent modification could happen on a same ConfigMap in corner
+	 *                  case, the update operation may fail. The caller needs to handle such situation and retry with more attempts.
+	 *
+	 * @return Return the ConfigMap update future.
+	 */
+	CompletableFuture<Void> updateConfigMap(KubernetesConfigMap configMap);
 
-		void onError(List<KubernetesPod> pods);
+	/**
+	 * Watch the ConfigMaps with specified name and do the {@link WatchCallbackHandler}.
+	 *
+	 * @param name name to filter the ConfigMaps to watch
+	 * @param callbackHandler callbackHandler which reacts to ConfigMap events
+	 * @return Return a watch for ConfigMaps. It needs to be closed after use.
+	 */
+	KubernetesWatch watchConfigMapsAndDoCallback(
+		String name,
+		WatchCallbackHandler<KubernetesConfigMap> callbackHandler);
+
+	/**
+	 * Delete the Kubernetes ConfigMaps by labels. This will be used by {@link org.apache.flink.kubernetes.highavailability.KubernetesHaServices}
+	 * to clean up all data.
+	 * @param labels labels to filter the resources. e.g. type: high-availability
+	 */
+	void deleteConfigMapsByLabels(Map<String, String> labels);
+
+	/**
+	 * Callback handler for kubernetes resources.
+	 */
+	interface WatchCallbackHandler<T> {
+
+		void onAdded(List<T> resources);
+
+		void onModified(List<T> resources);
+
+		void onDeleted(List<T> resources);
+
+		void onError(List<T> resources);
 
 		void handleFatalError(Throwable throwable);
 	}
