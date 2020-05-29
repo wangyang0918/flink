@@ -175,4 +175,12 @@ appender.console.layout.pattern = %d{yyyy-MM-dd HH:mm:ss,SSS} %-5p [%t] %-60c %x
 END
 }
 
+function get_host_machine_address {
+    if [[ "${OS_TYPE}" != "linux" ]]; then
+        echo $(minikube ssh "route -n | grep ^0.0.0.0 | awk '{ print \$2 }' | tr -d '[:space:]'")
+    else
+        echo "localhost"
+    fi
+}
+
 on_exit cleanup
