@@ -174,4 +174,9 @@ function cleanup {
     stop_kubernetes
 }
 
+function cp_dummy_fs_to_opt() {
+    cp "${END_TO_END_DIR}/flink-plugins-test/dummy-fs/target/flink-dummy-fs.jar" "${FLINK_DIR}/opt/"
+    cp "${END_TO_END_DIR}/flink-plugins-test/another-dummy-fs/target/flink-another-dummy-fs.jar" "${FLINK_DIR}/opt/"
+}
+
 on_exit cleanup
