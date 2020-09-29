@@ -20,7 +20,6 @@ package org.apache.flink.kubernetes.kubeclient;
 
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
-import org.apache.flink.kubernetes.configuration.KubernetesHighAvailabilityOptions;
 import org.apache.flink.kubernetes.kubeclient.decorators.ExternalServiceDecorator;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMapWatcher;
@@ -72,7 +71,6 @@ public class Fabric8FlinkKubeClient implements FlinkKubeClient {
 	private final KubernetesClient internalClient;
 	private final String clusterId;
 	private final String namespace;
-	private final int retryMaxAttempts;
 
 	private final ExecutorService kubeClientExecutorService;
 
@@ -84,7 +82,6 @@ public class Fabric8FlinkKubeClient implements FlinkKubeClient {
 		this.clusterId = checkNotNull(flinkConfig.getString(KubernetesConfigOptions.CLUSTER_ID));
 
 		this.namespace = flinkConfig.getString(KubernetesConfigOptions.NAMESPACE);
-		this.retryMaxAttempts = flinkConfig.getInteger(KubernetesHighAvailabilityOptions.KUBERNETES_MAX_RETRY_ATTEMPTS);
 
 		this.kubeClientExecutorService = asyncExecutorFactory.get();
 	}
@@ -290,6 +287,11 @@ public class Fabric8FlinkKubeClient implements FlinkKubeClient {
 	@Override
 	public void deleteConfigMapsByLabels(Map<String, String> labels) {
 		this.internalClient.configMaps().withLabels(labels).delete();
+	}
+
+	@Override
+	public void deleteConfigMap(String configMapName) {
+		this.internalClient.configMaps().withName(configMapName).delete();
 	}
 
 	@Override

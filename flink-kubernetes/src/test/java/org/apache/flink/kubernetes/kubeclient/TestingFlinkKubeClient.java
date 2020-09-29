@@ -152,6 +152,11 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 	}
 
 	@Override
+	public void deleteConfigMap(String configMapName) {
+		configMapStore.remove(configMapName);
+	}
+
+	@Override
 	public void close() throws Exception {
 		// noop
 	}

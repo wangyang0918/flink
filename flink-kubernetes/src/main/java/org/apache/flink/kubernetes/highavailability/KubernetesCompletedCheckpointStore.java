@@ -108,7 +108,7 @@ public class KubernetesCompletedCheckpointStore implements CompletedCheckpointSt
 		List<Tuple2<RetrievableStateHandle<CompletedCheckpoint>, String>> initialCheckpoints;
 		while (true) {
 			try {
-				initialCheckpoints = checkpointsInKubernetes.getAll(configMapName);
+				initialCheckpoints = checkpointsInKubernetes.getAllAndLock();
 				break;
 			}
 			catch (ConcurrentModificationException e) {
@@ -187,7 +187,7 @@ public class KubernetesCompletedCheckpointStore implements CompletedCheckpointSt
 		final String key = checkpointIdToKey(checkpoint.getCheckpointID());
 
 		// Now add the new one. If it fails, we don't want to loose existing data.
-		checkpointsInKubernetes.add(configMapName, key, checkpoint);
+		checkpointsInKubernetes.addAndLock(key, checkpoint);
 
 		completedCheckpoints.addLast(checkpoint);
 
@@ -226,11 +226,14 @@ public class KubernetesCompletedCheckpointStore implements CompletedCheckpointSt
 					completedCheckpoint -> completedCheckpoint.discardOnShutdown(jobStatus));
 			}
 
+			// Clean-up the checkpoint meta in ConfigMap
+			kubeClient.deleteConfigMap(configMapName);
 			completedCheckpoints.clear();
 		} else {
 			LOG.info("Suspending");
 
 			// Clear the local handles, but don't remove any state
+			checkpointsInKubernetes.releaseAll();
 			completedCheckpoints.clear();
 		}
 	}
@@ -253,7 +256,7 @@ public class KubernetesCompletedCheckpointStore implements CompletedCheckpointSt
 	}
 
 	private boolean tryRemove(long checkpointId) throws Exception {
-		return checkpointsInKubernetes.remove(configMapName, checkpointIdToKey(checkpointId));
+		return checkpointsInKubernetes.releaseAndTryRemove(checkpointIdToKey(checkpointId));
 	}
 
 	private static String checkpointIdToKey(long checkpointId) {

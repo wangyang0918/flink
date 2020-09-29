@@ -27,6 +27,7 @@ import org.apache.flink.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -52,14 +53,14 @@ public class KubernetesRunningJobsRegistry implements RunningJobsRegistry {
 	}
 
 	@Override
-	public void setJobRunning(JobID jobID) {
+	public void setJobRunning(JobID jobID) throws IOException {
 		checkNotNull(jobID);
 
 		writeJobStatusToConfigMap(jobID, JobSchedulingStatus.RUNNING);
 	}
 
 	@Override
-	public void setJobFinished(JobID jobID) {
+	public void setJobFinished(JobID jobID) throws IOException {
 		checkNotNull(jobID);
 
 		writeJobStatusToConfigMap(jobID, JobSchedulingStatus.DONE);
@@ -80,19 +81,23 @@ public class KubernetesRunningJobsRegistry implements RunningJobsRegistry {
 	}
 
 	@Override
-	public void clearJob(JobID jobID) {
+	public void clearJob(JobID jobID) throws IOException {
 		checkNotNull(jobID);
 
-		kubeClient.getConfigMap(configMapName).ifPresent(
-			configMap -> {
-				if (configMap.getData().remove(jobID.toString()) != null) {
-					kubeClient.updateConfigMap(configMap);
+		final Optional<KubernetesConfigMap> optional = kubeClient.getConfigMap(configMapName);
+		if (optional.isPresent()) {
+			final KubernetesConfigMap configMap = optional.get();
+			if (configMap.getData() != null && configMap.getData().remove(jobID.toString()) != null) {
+				try {
+					kubeClient.updateConfigMap(configMap).get();
+				} catch (Exception e) {
+					throw new IOException("Failed to clear job state from ConfigMap for job " + jobID, e);
 				}
 			}
-		);
+		}
 	}
 
-	private void writeJobStatusToConfigMap(JobID jobID, JobSchedulingStatus status) {
+	private void writeJobStatusToConfigMap(JobID jobID, JobSchedulingStatus status) throws IOException {
 		LOG.debug("Setting scheduling state for job {} to {}.", jobID, status);
 		final Optional<KubernetesConfigMap> optional = kubeClient.getConfigMap(configMapName);
 		final Map<String, String> data = new HashMap<>();
@@ -103,7 +108,11 @@ public class KubernetesRunningJobsRegistry implements RunningJobsRegistry {
 			}
 			data.put(jobID.toString(), status.name());
 			configMap.setData(data);
-			kubeClient.updateConfigMap(configMap);
+			try {
+				kubeClient.updateConfigMap(configMap).get();
+			} catch (Exception e) {
+				throw new IOException("Failed to set " + status.name() + " state in ConfigMap for job " + jobID, e);
+			}
 		} else {
 			data.put(jobID.toString(), status.name());
 			kubeClient.createConfigMap(configMapName, data, LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY);

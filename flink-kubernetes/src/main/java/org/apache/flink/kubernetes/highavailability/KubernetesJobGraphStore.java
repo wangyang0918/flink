@@ -77,14 +77,18 @@ public class KubernetesJobGraphStore implements JobGraphStore {
 
 	private final String configMapName;
 
+	private final int maxRetryAttempts;
+
 	private KubernetesWatch kubernetesWatch;
 
 	public KubernetesJobGraphStore(
 			FlinkKubeClient kubeClient,
 			String configMapName,
+			int maxRetryAttempts,
 			KubernetesStateHandleStore<JobGraph> jobGraphsInKubernetes) {
 		this.kubeClient = checkNotNull(kubeClient);
 		this.configMapName = checkNotNull(configMapName);
+		this.maxRetryAttempts = checkNotNull(maxRetryAttempts);
 		this.jobGraphsInKubernetes = checkNotNull(jobGraphsInKubernetes);
 	}
 
@@ -130,7 +134,7 @@ public class KubernetesJobGraphStore implements JobGraphStore {
 				final RetrievableStateHandle<JobGraph> jobGraphRetrievableStateHandle;
 
 				try {
-					jobGraphRetrievableStateHandle = jobGraphsInKubernetes.get(configMapName, key);
+					jobGraphRetrievableStateHandle = jobGraphsInKubernetes.getAndLock(key);
 				} catch (Exception e) {
 					throw new FlinkException("Could not retrieve the submitted job graph state handle " +
 						"for " + key + " from the submitted job graph store.", e);
@@ -159,7 +163,7 @@ public class KubernetesJobGraphStore implements JobGraphStore {
 				return jobGraph;
 			} finally {
 				if (!success) {
-					// TODO release
+					jobGraphsInKubernetes.releaseAll();
 				}
 			}
 		}
@@ -174,7 +178,7 @@ public class KubernetesJobGraphStore implements JobGraphStore {
 		}
 
 		try {
-			keys = jobGraphsInKubernetes.getAllKeys(configMapName);
+			keys = jobGraphsInKubernetes.getAllKeys();
 		} catch (Exception e) {
 			throw new Exception("Failed to retrieve entry paths from KubernetesStateHandleStore.", e);
 		}
@@ -204,11 +208,11 @@ public class KubernetesJobGraphStore implements JobGraphStore {
 		while (!success && isRunning) {
 			synchronized (lock) {
 				try {
-					if (!jobGraphsInKubernetes.exists(configMapName, jobId)) {
-						jobGraphsInKubernetes.add(configMapName, jobGraph.getJobID().toString(), jobGraph);
+					if (!jobGraphsInKubernetes.exists(jobId)) {
+						jobGraphsInKubernetes.addAndLock(jobGraph.getJobID().toString(), jobGraph);
 						addedJobGraphs.add(jobGraph.getJobID());
 					} else if (addedJobGraphs.contains(jobGraph.getJobID())) {
-						jobGraphsInKubernetes.replace(configMapName, jobGraph.getJobID().toString(), jobGraph);
+						jobGraphsInKubernetes.replace(jobGraph.getJobID().toString(), jobGraph);
 						LOG.info("Updated {} in config map.", jobGraph);
 					} else {
 						throw new IllegalStateException("Oh, no. Trying to update a graph you didn't " +
@@ -232,7 +236,7 @@ public class KubernetesJobGraphStore implements JobGraphStore {
 
 		synchronized (lock) {
 			if (addedJobGraphs.contains(jobId)) {
-				if (jobGraphsInKubernetes.remove(configMapName, jobId.toString())) {
+				if (jobGraphsInKubernetes.releaseAndTryRemove(jobId.toString())) {
 					addedJobGraphs.remove(jobId);
 				} else {
 					throw new FlinkException(String.format("Could not remove job graph with job id %s from ConfigMap.", jobId));
@@ -240,12 +244,24 @@ public class KubernetesJobGraphStore implements JobGraphStore {
 			}
 		}
 
-		LOG.info("Removed job graph {} from ZooKeeper.", jobId);
+		LOG.info("Removed job graph {} from ConfigMap {}.", jobId, configMapName);
 	}
 
 	@Override
 	public void releaseJobGraph(JobID jobId) throws Exception {
-		//TODO add lock/release
+		checkNotNull(jobId, "Job ID");
+
+		LOG.debug("Releasing job graph {} from {}.", jobId, configMapName);
+
+		synchronized (lock) {
+			if (addedJobGraphs.contains(jobId)) {
+				jobGraphsInKubernetes.release(jobId.toString());
+
+				addedJobGraphs.remove(jobId);
+			}
+		}
+
+		LOG.info("Released locks of job graph {} from ConfigMap {}.", jobId, configMapName);
 	}
 
 	private class ConfigMapCallbackHandlerImpl implements FlinkKubeClient.WatchCallbackHandler<KubernetesConfigMap> {

@@ -66,7 +66,7 @@ class KubernetesLeaderRetrievalService implements LeaderRetrievalService {
 	private volatile boolean running;
 
 	KubernetesLeaderRetrievalService(FlinkKubeClient kubeClient, String configMapName) {
-		this.kubeClient = checkNotNull(kubeClient);
+		this.kubeClient = checkNotNull(kubeClient, "Kubernetes client should not be null.");
 		this.configMapName = checkNotNull(configMapName, "ConfigMap name should not be null.");
 
 		this.leaderListener = null;

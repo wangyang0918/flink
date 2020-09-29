@@ -61,8 +61,6 @@ public class KubernetesLeaderElectionService extends AbstractLeaderElectionServi
 
 	private final KubernetesLeaderElector leaderElector;
 
-	private CompletableFuture<Void> leaderElectionFuture;
-
 	private KubernetesWatch kubernetesWatch;
 
 	KubernetesLeaderElectionService(
@@ -70,8 +68,8 @@ public class KubernetesLeaderElectionService extends AbstractLeaderElectionServi
 			Executor executor,
 			KubernetesLeaderElectionConfiguration leaderConfig) {
 
-		this.kubeClient = checkNotNull(checkNotNull(kubeClient));
-		this.executor = executor;
+		this.kubeClient = checkNotNull(kubeClient, "Kubernetes client should not be null.");
+		this.executor = checkNotNull(executor, "Executor should not be null.");
 		this.clusterId = leaderConfig.getClusterId();
 		this.configMapName = leaderConfig.getConfigMapName();
 		this.leaderElector = kubeClient.createLeaderElector(leaderConfig, new LeaderCallbackHandlerImpl());
@@ -80,13 +78,12 @@ public class KubernetesLeaderElectionService extends AbstractLeaderElectionServi
 
 	@Override
 	public void internalStart(LeaderContender contender) {
-		leaderElectionFuture = CompletableFuture.runAsync(leaderElector::run, executor);
+		CompletableFuture.runAsync(leaderElector::run, executor);
 		kubernetesWatch = kubeClient.watchConfigMapsAndDoCallback(configMapName, new ConfigMapCallbackHandlerImpl());
 	}
 
 	@Override
 	public void internalStop() {
-		leaderElectionFuture.complete(null);
 		if (kubernetesWatch != null) {
 			kubernetesWatch.close();
 		}
@@ -130,7 +127,12 @@ public class KubernetesLeaderElectionService extends AbstractLeaderElectionServi
 	private void updateConfigMapWithLabels(KubernetesConfigMap configMap) {
 		configMap.setLabels(
 			KubernetesUtils.getConfigMapLabels(clusterId, LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY));
-		kubeClient.updateConfigMap(configMap);
+		try {
+			kubeClient.updateConfigMap(configMap).get();
+		} catch (Exception e) {
+			leaderContender.handleError(
+				new Exception("Could not write leader address and leader session ID to ConfigMap " + configMapName, e));
+		}
 	}
 
 	private class LeaderCallbackHandlerImpl extends KubernetesLeaderElector.LeaderCallbackHandler {

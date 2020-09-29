@@ -22,13 +22,18 @@ import org.apache.flink.api.common.JobStatus;
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
 import org.apache.flink.runtime.checkpoint.CheckpointIDCounter;
+import org.apache.flink.runtime.concurrent.FutureUtils;
 import org.apache.flink.util.FlinkRuntimeException;
+import org.apache.flink.util.function.FunctionUtils;
+import org.apache.flink.util.function.FunctionWithException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.function.Supplier;
 
 import static org.apache.flink.kubernetes.utils.Constants.LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY;
@@ -46,15 +51,25 @@ public class KubernetesCheckpointIDCounter implements CheckpointIDCounter {
 
 	private final FlinkKubeClient kubeClient;
 
+	private final Executor executor;
+
 	private final String configMapName;
+
+	private final int maxRetryAttempts;
 
 	private volatile boolean running;
 
 	private final Supplier<FlinkRuntimeException> configMapNotExistSupplier;
 
-	public KubernetesCheckpointIDCounter(FlinkKubeClient kubeClient, String configMapName) {
+	public KubernetesCheckpointIDCounter(
+			FlinkKubeClient kubeClient,
+			Executor executor,
+			String configMapName,
+			int maxRetryAttempts) {
 		this.kubeClient = checkNotNull(kubeClient, "Kubernetes client should not be null.");
+		this.executor = checkNotNull(executor, "Executor should not be null.");
 		this.configMapName = checkNotNull(configMapName, "ConfigMap name should not be null.");
+		this.maxRetryAttempts = maxRetryAttempts;
 		this.configMapNotExistSupplier =
 			() -> new FlinkRuntimeException("ConfigMap " + configMapName + " does not exist.");
 
@@ -78,21 +93,23 @@ public class KubernetesCheckpointIDCounter implements CheckpointIDCounter {
 			if (!running) {
 				return;
 			}
+			LOG.info("Shutting down.");
+			if (jobStatus.isGloballyTerminalState()) {
+				LOG.info("Removing ConfigMap {}", configMapName);
+				kubeClient.deleteConfigMap(configMapName);
+			}
 			running = false;
 		}
-		LOG.info("Shutting down.");
 	}
 
 	@Override
-	public long getAndIncrement() {
-		return kubeClient.getConfigMap(configMapName)
-			.map(configMap -> {
-				final long newCount = getCurrentCounter(configMap) + 1;
-				configMap.getData().put(LEADER_CHECKPOINT_COUNTER_KEY, String.valueOf(newCount));
-				kubeClient.updateConfigMap(configMap);
-				return newCount;
-			})
-			.orElseThrow(configMapNotExistSupplier);
+	public long getAndIncrement() throws Exception {
+		return updateConfigMapWithRetry(configMap -> {
+			final long newCount = getCurrentCounter(configMap) + 1;
+			configMap.getData().put(LEADER_CHECKPOINT_COUNTER_KEY, String.valueOf(newCount));
+			kubeClient.updateConfigMap(configMap).get();
+			return newCount;
+		});
 	}
 
 	@Override
@@ -103,15 +120,14 @@ public class KubernetesCheckpointIDCounter implements CheckpointIDCounter {
 	}
 
 	@Override
-	public void setCount(long newCount) {
-		kubeClient.getConfigMap(configMapName)
-			.map(configMap -> {
-				if (getCurrentCounter(configMap) != newCount) {
-					configMap.getData().put(LEADER_CHECKPOINT_COUNTER_KEY, String.valueOf(newCount));
-					kubeClient.updateConfigMap(configMap);
-				}
-				return configMap;
-			}).orElseThrow(configMapNotExistSupplier);
+	public void setCount(long newCount) throws Exception {
+		updateConfigMapWithRetry(configMap -> {
+			if (getCurrentCounter(configMap) != newCount) {
+				configMap.getData().put(LEADER_CHECKPOINT_COUNTER_KEY, String.valueOf(newCount));
+				kubeClient.updateConfigMap(configMap).get();
+			}
+			return newCount;
+		});
 	}
 
 	private long getCurrentCounter(KubernetesConfigMap configMap) {
@@ -119,5 +135,16 @@ public class KubernetesCheckpointIDCounter implements CheckpointIDCounter {
 			return Long.valueOf(configMap.getData().get(LEADER_CHECKPOINT_COUNTER_KEY));
 		}
 		throw new IllegalStateException("Error while get current counter from ConfigMap " + configMapName);
+	}
+
+	private long updateConfigMapWithRetry(FunctionWithException<KubernetesConfigMap, Long, ?> function) throws Exception {
+		return FutureUtils.retry(
+			() -> CompletableFuture.supplyAsync(
+				() -> kubeClient.getConfigMap(configMapName)
+					.map(FunctionUtils.uncheckedFunction(function))
+					.orElseThrow(configMapNotExistSupplier),
+				executor),
+			maxRetryAttempts,
+			executor).get();
 	}
 }

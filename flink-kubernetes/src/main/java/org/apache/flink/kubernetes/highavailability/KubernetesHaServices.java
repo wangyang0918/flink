@@ -46,6 +46,7 @@ import java.util.concurrent.Executor;
 
 import static org.apache.flink.kubernetes.utils.Constants.LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY;
 import static org.apache.flink.kubernetes.utils.Constants.NAME_SEPARATOR;
+import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /**
  * High availability service for Kubernetes.
@@ -66,9 +67,9 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 
 	private final String leaderSuffix;
 
-	private final String runningJobRegistryName;
-
 	private final String jobGraphStoreName;
+
+	private final int maxRetryAttempts;
 
 	private final String clusterId;
 
@@ -90,21 +91,21 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 	KubernetesHaServices(
 			FlinkKubeClient kubeClient,
 			Executor executor,
-			Configuration configuration,
+			Configuration config,
 			BlobStoreService blobStoreService) {
 
-		this.kubeClient = kubeClient;
-		this.executor = executor;
-		this.configuration = configuration;
-		this.clusterId = configuration.get(KubernetesConfigOptions.CLUSTER_ID);
+		this.kubeClient = checkNotNull(kubeClient);
+		this.executor = checkNotNull(executor);
+		this.configuration = checkNotNull(config);
+		this.clusterId = checkNotNull(config.get(KubernetesConfigOptions.CLUSTER_ID));
 		this.blobStoreService = blobStoreService;
 
-		this.leaderSuffix = configuration.getString(KubernetesHighAvailabilityOptions.HA_KUBERNETES_LEADER_SUFFIX);
-		this.runningJobRegistryName = configuration.getString(
-			KubernetesHighAvailabilityOptions.HA_KUBERNETES_RUNNING_JOB_REGISTRY_SUFFIX);
-		this.jobGraphStoreName = configuration.getString(
-			KubernetesHighAvailabilityOptions.HA_KUBERNETES_JOBGRAPHS_SUFFIX);
+		this.leaderSuffix = config.getString(KubernetesHighAvailabilityOptions.HA_KUBERNETES_LEADER_SUFFIX);
+		this.jobGraphStoreName = config.getString(KubernetesHighAvailabilityOptions.HA_KUBERNETES_JOBGRAPHS_SUFFIX);
+		this.maxRetryAttempts = config.getInteger(KubernetesHighAvailabilityOptions.KUBERNETES_MAX_RETRY_ATTEMPTS);
 
+		final String runningJobRegistryName = configuration.getString(
+			KubernetesHighAvailabilityOptions.HA_KUBERNETES_RUNNING_JOB_REGISTRY_SUFFIX);
 		this.runningJobsRegistry = new KubernetesRunningJobsRegistry(
 			kubeClient, clusterId + NAME_SEPARATOR + runningJobRegistryName);
 	}
@@ -156,7 +157,7 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 
 	@Override
 	public CheckpointRecoveryFactory getCheckpointRecoveryFactory() {
-		return new KubernetesCheckpointRecoveryFactory(kubeClient, configuration, executor, clusterId);
+		return new KubernetesCheckpointRecoveryFactory(kubeClient, configuration, executor);
 	}
 
 	@Override
@@ -164,10 +165,12 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 		final RetrievableStateStorageHelper<JobGraph> stateStorage =
 			new FileSystemStateStorageHelper<>(HighAvailabilityServicesUtils
 				.getClusterHighAvailableStoragePath(configuration), SUBMITTED_JOBGRAPH_FILE_PREFIX);
+		final String configMapName = clusterId + NAME_SEPARATOR + jobGraphStoreName;
 		return new KubernetesJobGraphStore(
 			kubeClient,
-			clusterId + NAME_SEPARATOR + jobGraphStoreName,
-			new KubernetesStateHandleStore<>(kubeClient, stateStorage));
+			configMapName,
+			maxRetryAttempts,
+			new KubernetesStateHandleStore<>(kubeClient, executor, configMapName, stateStorage, maxRetryAttempts));
 	}
 
 	@Override

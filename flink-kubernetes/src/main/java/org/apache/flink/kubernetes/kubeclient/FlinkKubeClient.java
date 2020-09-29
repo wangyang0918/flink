@@ -168,6 +168,13 @@ public interface FlinkKubeClient extends AutoCloseable {
 	void deleteConfigMapsByLabels(Map<String, String> labels);
 
 	/**
+	 * Delete a Kubernetes ConfigMap by name.
+	 *
+	 * @param configMapName ConfigMap name
+	 */
+	void deleteConfigMap(String configMapName);
+
+	/**
 	 * Callback handler for kubernetes resources.
 	 */
 	interface WatchCallbackHandler<T> {
