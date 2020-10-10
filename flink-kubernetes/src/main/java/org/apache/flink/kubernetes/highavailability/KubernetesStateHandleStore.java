@@ -21,11 +21,10 @@ package org.apache.flink.kubernetes.highavailability;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
-import org.apache.flink.kubernetes.utils.Constants;
-import org.apache.flink.runtime.concurrent.FutureUtils;
+import org.apache.flink.kubernetes.utils.KubernetesUtils;
 import org.apache.flink.runtime.state.RetrievableStateHandle;
 import org.apache.flink.runtime.zookeeper.RetrievableStateStorageHelper;
-import org.apache.flink.util.FlinkRuntimeException;
+import org.apache.flink.util.FlinkException;
 import org.apache.flink.util.InstantiationUtil;
 import org.apache.flink.util.function.FunctionUtils;
 
@@ -37,14 +36,10 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
-import java.util.function.Supplier;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
@@ -68,57 +63,39 @@ public class KubernetesStateHandleStore<T extends Serializable> {
 
 	private static final Logger LOG = LoggerFactory.getLogger(KubernetesStateHandleStore.class);
 
-	private static final String KEY_LOCK_SUFFIX = "lock";
-
-	private static final String LOCK_IDENTITY = UUID.randomUUID().toString();
-
 	private final FlinkKubeClient kubeClient;
-
-	private final Executor executor;
 
 	private final String configMapName;
 
 	private final RetrievableStateStorageHelper<T> storage;
-
-	private final int maxRetryAttempts;
-
-	private final Supplier<FlinkRuntimeException> configMapNotExistOrEmptySupplier;
 
 	/**
 	 * Creates a {@link KubernetesStateHandleStore}.
 	 *
 	 * @param kubeClient    The Kubernetes client.
 	 * @param storage       To persist the actual state and whose returned state handle is then written to ConfigMap
-	 * @param maxRetryAttempts Max retry attempts to update the Kubernetes ConfigMap
 	 */
 	public KubernetesStateHandleStore(
 			FlinkKubeClient kubeClient,
-			Executor executor,
 			String configMapName,
-			RetrievableStateStorageHelper<T> storage,
-			int maxRetryAttempts) {
+			RetrievableStateStorageHelper<T> storage) {
 
 		this.kubeClient = checkNotNull(kubeClient, "Kubernetes client");
 		this.storage = checkNotNull(storage, "State storage");
-		this.executor = checkNotNull(executor, "Executor");
 		this.configMapName = checkNotNull(configMapName, "ConfigMap name");
-		this.maxRetryAttempts = maxRetryAttempts;
-
-		this.configMapNotExistOrEmptySupplier =
-			() -> new FlinkRuntimeException("ConfigMap " + configMapName + " not exists or is empty");
-		LOG.info("Creating KubernetesStateHandleStore with lock identity {}.", LOCK_IDENTITY);
 	}
 
 	/**
-	 * Creates a state handle, stores it in ConfigMap. Lock means adding a key with suffix {@link KubernetesStateHandleStore#KEY_LOCK_SUFFIX}.
-	 * Only the "lock" key is empty, the corresponding key could be deleted.
+	 * Creates a state handle, stores it in ConfigMap. We could guarantee that only the leader could write the ConfigMap
+	 * in a transactional operation. Since “Get(check the leader)-and-Update(write back to the ConfigMap)” is a
+	 * transactional operation.
 	 *
 	 * @param key             Key
 	 * @param state           State to be added
 	 *
 	 * @throws Exception If a ConfigMap or state handle operation fails
 	 */
-	public void addAndLock(String key, T state) throws Exception {
+	public void add(String key, T state) throws Exception {
 		checkNotNull(key, "Key in ConfigMap.");
 		checkNotNull(state, "State.");
 
@@ -127,8 +104,7 @@ public class KubernetesStateHandleStore<T extends Serializable> {
 		boolean success = false;
 
 		try {
-			add(key, storeHandle);
-			success = true;
+			success = add(key, storeHandle);
 		} finally {
 			if (!success) {
 				// Cleanup the state handle if it was not written to ConfigMap.
@@ -158,8 +134,7 @@ public class KubernetesStateHandleStore<T extends Serializable> {
 		boolean success = false;
 
 		try {
-			add(key, newStateHandle);
-			success = true;
+			success = add(key, newStateHandle);
 		} finally {
 			if (success) {
 				oldStateHandle.discardState();
@@ -181,7 +156,7 @@ public class KubernetesStateHandleStore<T extends Serializable> {
 
 		final Optional<KubernetesConfigMap> optional = kubeClient.getConfigMap(configMapName);
 
-		return optional.isPresent() && optional.get().getData() != null && optional.get().getData().containsKey(key);
+		return optional.isPresent() && optional.get().getData().containsKey(key);
 	}
 
 	/**
@@ -193,21 +168,20 @@ public class KubernetesStateHandleStore<T extends Serializable> {
 	 * @throws IOException Thrown if the method failed to deserialize the stored state handle
 	 * @throws Exception Thrown if a ConfigMap operation failed
 	 */
-	public RetrievableStateHandle<T> getAndLock(String key) throws Exception {
+	public RetrievableStateHandle<T> get(String key) throws Exception {
 		checkNotNull(key, "Key in ConfigMap.");
 
-		return retry(() -> kubeClient.getConfigMap(configMapName)
-			.filter(configMap -> configMap.getData() != null && configMap.getData().containsKey(key))
-			.map(
-				FunctionUtils.uncheckedFunction(
-					configMap -> {
-						final RetrievableStateHandle<T> stateHandle = deserializeObject(configMap.getData().get(key));
-						configMap.getData().put(getKeyForLock(key), LOCK_IDENTITY);
-						kubeClient.updateConfigMap(configMap).get();
-						return stateHandle;
-					}
-				))
-			.orElseThrow(configMapNotExistOrEmptySupplier)).get();
+		final Optional<KubernetesConfigMap> optional = kubeClient.getConfigMap(configMapName);
+		if (optional.isPresent()) {
+			final KubernetesConfigMap configMap = optional.get();
+			if (configMap.getData().containsKey(key)) {
+				return deserializeObject(configMap.getData().get(key));
+			} else {
+				throw new FlinkException("Could not find " + key + " in ConfigMap " + configMapName);
+			}
+		} else {
+			throw new FlinkException("ConfigMap " + configMapName + " not exists or is empty");
+		}
 	}
 
 	/**
@@ -218,35 +192,26 @@ public class KubernetesStateHandleStore<T extends Serializable> {
 	 *
 	 * @return True if the state handle could be released
 	 */
-	public boolean releaseAndTryRemove(String key) {
+	public boolean remove(String key) {
 		checkNotNull(key, "Key in ConfigMap.");
 
 		try {
-			return retry(() -> kubeClient.getConfigMap(configMapName)
-				.filter(configMap -> configMap.getData() != null && configMap.getData().containsKey(key))
-				.map(
-					FunctionUtils.uncheckedFunction(
-						configMap -> {
-							final String identity = configMap.getData().remove(getKeyForLock(key));
-							// Check the owner of key
-							if (identity == null || LOCK_IDENTITY.equals(identity)) {
-								final String content = configMap.getData().remove(key);
-								try {
-									final RetrievableStateHandle<T> stateHandle = deserializeObject(content);
-									stateHandle.discardState();
-								} catch (Exception e) {
-									LOG.warn("Could not retrieve the state handle of {} from ConfigMap {}.",
-										key, configMapName, e);
-								}
-								kubeClient.updateConfigMap(configMap).get();
-							} else {
-								LOG.debug("Could not remove {} in {}. The ownership is {}, current is {}.",
-									key, configMapName, identity, LOCK_IDENTITY);
-							}
-							return true;
-						})
-				)
-				.orElse(true)).get();
+			return kubeClient.checkAndUpdateConfigMap(
+				configMapName,
+				KubernetesUtils.getLeaderChecker(),
+				configMap -> {
+					if (configMap.getData().containsKey(key)) {
+						final String content = configMap.getData().remove(key);
+						try {
+							final RetrievableStateHandle<T> stateHandle = deserializeObject(content);
+							stateHandle.discardState();
+						} catch (Exception e) {
+							LOG.warn(
+								"Could not retrieve the state handle of {} from ConfigMap {}.", key, configMapName, e);
+						}
+					}
+					return configMap;
+				}).get();
 		} catch (Exception e) {
 			LOG.debug("Failed to remove the key {} in {}.", key, configMapName);
 			return false;
@@ -254,42 +219,32 @@ public class KubernetesStateHandleStore<T extends Serializable> {
 	}
 
 	/**
-	 * Gets all available state handles from Kubernetes and locks the respective state nodes.
+	 * Gets all available state handles from Kubernetes.
 	 *
 	 * <p>If there is a concurrent modification, the operation is retried until it succeeds.
 	 *
 	 * @return All state handles from ConfigMap.
 	 */
 	@SuppressWarnings("unchecked")
-	public List<Tuple2<RetrievableStateHandle<T>, String>> getAllAndLock() throws Exception {
+	public List<Tuple2<RetrievableStateHandle<T>, String>> getAll(Predicate<Map.Entry<String, String>> filter) {
 
 		final List<Tuple2<RetrievableStateHandle<T>, String>> stateHandles = new ArrayList<>();
-		return retry(() -> kubeClient.getConfigMap(configMapName)
-			.filter(configMap -> configMap.getData() != null)
+		return kubeClient.getConfigMap(configMapName)
 			.map(
-				FunctionUtils.uncheckedFunction(
-					configMap -> {
-						final Map<String, String> data = new HashMap<>(configMap.getData());
-						configMap.getData().entrySet().stream()
-							.filter(entry -> !entry.getKey().endsWith(KEY_LOCK_SUFFIX)) // Not the lock key
-							.forEach(
-								entry -> {
-									try {
-										stateHandles.add(
-											new Tuple2(deserializeObject(entry.getValue()), entry.getKey()));
-										// Update the lock
-										data.put(getKeyForLock(entry.getKey()), LOCK_IDENTITY);
-									} catch (Exception e) {
-										LOG.warn("ConfigMap {} contained corrupted data. Ignoring the key {}.",
-											configMapName, entry.getKey());
-									}
-								}
-							);
-						configMap.setData(data);
-						kubeClient.updateConfigMap(configMap).get();
-						return stateHandles;
-					}))
-			.orElse(stateHandles)).get();
+				configMap -> {
+					configMap.getData().entrySet().stream()
+						.filter(filter)
+						.forEach(entry -> {
+							try {
+								stateHandles.add(new Tuple2(deserializeObject(entry.getValue()), entry.getKey()));
+							} catch (Exception e) {
+								LOG.warn("ConfigMap {} contained corrupted data. Ignoring the key {}.",
+									configMapName, entry.getKey());
+							}
+						});
+					return stateHandles;
+				})
+			.orElse(stateHandles);
 	}
 
 	/**
@@ -298,95 +253,26 @@ public class KubernetesStateHandleStore<T extends Serializable> {
 	 *
 	 * @return List of valid state handle keys in Kubernetes ConfigMap
 	 */
-	public Collection<String> getAllKeys() {
+	public Collection<String> getAllKeys(Predicate<String> filter) {
 
 		final List<String> keys = new ArrayList<>();
 		kubeClient.getConfigMap(configMapName)
-			.filter(configMap -> configMap.getData() != null)
-			.ifPresent(
-				configMap -> keys.addAll(
-					configMap.getData().keySet().stream()
-						.filter(key -> !key.endsWith(KEY_LOCK_SUFFIX))
-						.collect(Collectors.toList())));
+			.ifPresent(configMap -> keys.addAll(
+				configMap.getData().keySet().stream().filter(filter).collect(Collectors.toList())));
 		return keys;
 	}
 
-	/**
-	 * Releases the lock from the key in the given ConfigMap. If no lock exists, then nothing happens.
-	 *
-	 * @param key             Key to release
-	 *
-	 * @throws Exception if the delete operation of the lock key fails
-	 */
-	public void release(String key) throws Exception {
-		checkNotNull(key, "Key in ConfigMap.");
-
-		try {
-			retry(() -> kubeClient.getConfigMap(configMapName)
-				.filter(configMap -> configMap.getData() != null)
-				.map(
-					FunctionUtils.uncheckedFunction(
-						configMap -> {
-							final String identity = configMap.getData().remove(getKeyForLock(key));
-							if (identity == null || LOCK_IDENTITY.equals(identity)) {
-								configMap.getData().remove(key);
-								kubeClient.updateConfigMap(configMap).get();
-							} else {
-								LOG.debug("Could not release {} in {}. The ownership is {}, current is {}.",
-									key, configMap, identity, LOCK_IDENTITY);
-							}
-							return true;
-						})
-				).orElse(true)).get();
-		} catch (Exception e) {
-			throw new Exception("Failed to release the key " + key + " in " + configMapName + ".");
-		}
-	}
-
-	/**
-	 * Releases all lock keys of this {@link KubernetesStateHandleStore}.
-	 *
-	 * @throws Exception if the delete operation of the lock key fails
-	 */
-	public void releaseAll() throws Exception {
-		retry(() -> kubeClient.getConfigMap(configMapName)
-			.filter(configMap -> configMap.getData() != null)
-			.map(
-				FunctionUtils.uncheckedFunction(
-					configMap -> {
-						final Map<String, String> data = new HashMap<>(configMap.getData());
-						configMap.getData().forEach(
-							(key, value) -> {
-								if (value != null && value.equals(LOCK_IDENTITY)) {
-									data.remove(key);
-								}
-							});
-						configMap.setData(data);
-						kubeClient.updateConfigMap(configMap).get();
-						return true;
-					})
-			).orElse(true)).get();
-	}
-
-	private void add(String key, RetrievableStateHandle<T> stateHandle) throws Exception {
+	private boolean add(String key, RetrievableStateHandle<T> stateHandle) throws Exception {
 		// Serialize the state handle. This writes the state to the backend.
 		byte[] serializedStoreHandle = InstantiationUtil.serializeObject(stateHandle);
 
-		retry(() -> kubeClient.getConfigMap(configMapName)
-			.map(
-				FunctionUtils.uncheckedFunction(
-					configMap -> {
-						final Map<String, String> data = new HashMap<>();
-						if (configMap.getData() != null) {
-							data.putAll(configMap.getData());
-						}
-						data.put(key, Base64.getEncoder().encodeToString(serializedStoreHandle));
-						data.put(getKeyForLock(key), LOCK_IDENTITY);
-						configMap.setData(data);
-						kubeClient.updateConfigMap(configMap).get();
-						return true;
-					})
-			).orElse(true)).get();
+		return kubeClient.checkAndUpdateConfigMap(
+			configMapName,
+			KubernetesUtils.getLeaderChecker(),
+			configMap -> {
+				configMap.getData().put(key, Base64.getEncoder().encodeToString(serializedStoreHandle));
+				return configMap;
+			}).get();
 	}
 
 	private RetrievableStateHandle<T> deserializeObject(String content) throws Exception {
@@ -407,19 +293,8 @@ public class KubernetesStateHandleStore<T extends Serializable> {
 		checkNotNull(key, "State");
 
 		return kubeClient.getConfigMap(configMapName)
-			.filter(configMap -> configMap.getData() != null && configMap.getData().containsKey(key))
+			.filter(configMap -> configMap.getData().containsKey(key))
 			.map(FunctionUtils.uncheckedFunction(configMap -> deserializeObject(configMap.getData().get(key))))
 			.orElseThrow(() -> new Exception(key + " not exists in ConfigMap " + configMapName));
-	}
-
-	private String getKeyForLock(String key) {
-		return key + Constants.NAME_SEPARATOR + KEY_LOCK_SUFFIX;
-	}
-
-	private <S> CompletableFuture<S> retry(final Supplier<S> operation) {
-		return FutureUtils.retry(
-			() -> CompletableFuture.supplyAsync(operation, executor),
-			maxRetryAttempts,
-			executor);
 	}
 }

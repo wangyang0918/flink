@@ -20,6 +20,7 @@ package org.apache.flink.kubernetes.kubeclient.resources;
 
 import io.fabric8.kubernetes.api.model.ConfigMap;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -35,19 +36,21 @@ public class KubernetesConfigMap extends KubernetesResource<ConfigMap> {
 		return this.getInternalResource().getMetadata().getName();
 	}
 
+	public Map<String, String> getAnnotations() {
+		return this.getInternalResource().getMetadata().getAnnotations();
+	}
+
 	public Map<String, String> getData() {
+		if (this.getInternalResource().getData() == null) {
+			this.getInternalResource().setData(new HashMap<>());
+		}
 		return this.getInternalResource().getData();
 	}
 
-	public void setData(Map<String, String> data) {
-		this.getInternalResource().setData(data);
-	}
-
 	public Map<String, String> getLabels() {
+		if (this.getInternalResource().getMetadata().getLabels() == null) {
+			this.getInternalResource().getMetadata().setLabels(new HashMap<>());
+		}
 		return this.getInternalResource().getMetadata().getLabels();
-	}
-
-	public void setLabels(Map<String, String> labels) {
-		this.getInternalResource().getMetadata().setLabels(labels);
 	}
 }

@@ -27,14 +27,9 @@ import org.apache.flink.kubernetes.utils.KubernetesUtils;
 import org.apache.flink.runtime.leaderelection.AbstractLeaderElectionService;
 import org.apache.flink.runtime.leaderelection.LeaderContender;
 
-import javax.annotation.Nonnull;
-
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
@@ -46,8 +41,8 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /**
  * Leader election service for multiple JobManagers. The active JobManager is elected using Kubernetes.
- * The current leader's address as well as its leader session ID is published via Kubernetes ConfigMap as well.
- * Note that the contending lock and leader storage are using the same ConfigMap. And every election service(e.g.
+ * The current leader's address as well as its leader session ID is published via Kubernetes ConfigMap.
+ * Note that the contending lock and leader storage are using the same ConfigMap. And every component(e.g.
  * ResourceManager, Dispatcher, RestEndpoint, JobManager for each job) will have a separate ConfigMap.
  */
 public class KubernetesLeaderElectionService extends AbstractLeaderElectionService {
@@ -56,12 +51,14 @@ public class KubernetesLeaderElectionService extends AbstractLeaderElectionServi
 
 	private final Executor executor;
 
-	private final String clusterId;
 	private final String configMapName;
 
 	private final KubernetesLeaderElector leaderElector;
 
 	private KubernetesWatch kubernetesWatch;
+
+	// Labels will be used to clean up the ha related ConfigMaps.
+	private Map<String, String> configMapLabels;
 
 	KubernetesLeaderElectionService(
 			FlinkKubeClient kubeClient,
@@ -70,10 +67,11 @@ public class KubernetesLeaderElectionService extends AbstractLeaderElectionServi
 
 		this.kubeClient = checkNotNull(kubeClient, "Kubernetes client should not be null.");
 		this.executor = checkNotNull(executor, "Executor should not be null.");
-		this.clusterId = leaderConfig.getClusterId();
 		this.configMapName = leaderConfig.getConfigMapName();
 		this.leaderElector = kubeClient.createLeaderElector(leaderConfig, new LeaderCallbackHandlerImpl());
 		this.leaderContender = null;
+		this.configMapLabels = KubernetesUtils.getConfigMapLabels(
+			leaderConfig.getClusterId(), LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY);
 	}
 
 	@Override
@@ -90,24 +88,13 @@ public class KubernetesLeaderElectionService extends AbstractLeaderElectionServi
 	}
 
 	@Override
-	public boolean hasLeadership(@Nonnull UUID leaderSessionId) {
-		return leaderSessionId.equals(issuedLeaderSessionID);
-	}
-
-	@Override
 	public String toString() {
 		return "KubernetesLeaderElectionService{configMapName='" + configMapName + "'}";
 	}
 
+	@Override
 	protected void writeLeaderInformation() {
-		Optional<KubernetesConfigMap> optional = kubeClient.getConfigMap(configMapName);
-		if (optional.isPresent()) {
-			final KubernetesConfigMap configMap = optional.get();
-			configMap.setData(getCurrentLeaderData());
-			updateConfigMapWithLabels(configMap);
-		} else {
-			logger.debug("Leader ConfigMap {} does not exist!", configMapName);
-		}
+		updateConfigMap(configMapName);
 	}
 
 	@Override
@@ -115,23 +102,22 @@ public class KubernetesLeaderElectionService extends AbstractLeaderElectionServi
 		return leaderElector.hasLeadership();
 	}
 
-	private Map<String, String> getCurrentLeaderData() {
-		final Map<String, String> data = new HashMap<>();
-		if (confirmedLeaderAddress != null && confirmedLeaderSessionID != null) {
-			data.put(LEADER_ADDRESS_KEY, confirmedLeaderAddress);
-			data.put(LEADER_SESSION_ID_KEY, confirmedLeaderSessionID.toString());
-		}
-		return data;
-	}
-
-	private void updateConfigMapWithLabels(KubernetesConfigMap configMap) {
-		configMap.setLabels(
-			KubernetesUtils.getConfigMapLabels(clusterId, LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY));
+	private void updateConfigMap(String configMapName) {
 		try {
-			kubeClient.updateConfigMap(configMap).get();
+			kubeClient.checkAndUpdateConfigMap(
+				configMapName,
+				KubernetesUtils.getLeaderChecker(),
+				configMap -> {
+					// Get the updated ConfigMap with new leader information
+					if (confirmedLeaderAddress != null && confirmedLeaderSessionID != null) {
+						configMap.getData().put(LEADER_ADDRESS_KEY, confirmedLeaderAddress);
+						configMap.getData().put(LEADER_SESSION_ID_KEY, confirmedLeaderSessionID.toString());
+					}
+					configMap.getLabels().putAll(configMapLabels);
+					return configMap;
+				}).get();
 		} catch (Exception e) {
-			leaderContender.handleError(
-				new Exception("Could not write leader address and leader session ID to ConfigMap " + configMapName, e));
+			leaderContender.handleError(new Exception("Could not update ConfigMap " + configMapName, e));
 		}
 	}
 
@@ -145,10 +131,20 @@ public class KubernetesLeaderElectionService extends AbstractLeaderElectionServi
 		@Override
 		public void notLeader() {
 			// Clear the leader information in ConfigMap
-			kubeClient.getConfigMap(configMapName).ifPresent(configMap -> {
-				configMap.setData(new HashMap<>());
-				updateConfigMapWithLabels(configMap);
-			});
+			try {
+				kubeClient.checkAndUpdateConfigMap(
+					configMapName,
+					KubernetesUtils.getLeaderChecker(),
+					configMap -> {
+						configMap.getData().remove(LEADER_ADDRESS_KEY);
+						configMap.getData().remove(LEADER_SESSION_ID_KEY);
+						return configMap;
+					}
+				).get();
+			} catch (Exception e) {
+				leaderContender.handleError(
+					new Exception("Could not remove leader information from ConfigMap " + configMapName, e));
+			}
 			onRevokeLeadership();
 			// Continue to contend the leader
 			CompletableFuture.runAsync(leaderElector::run, executor);
@@ -165,14 +161,13 @@ public class KubernetesLeaderElectionService extends AbstractLeaderElectionServi
 		@Override
 		public void onModified(List<KubernetesConfigMap> configMaps) {
 			handleEvent(configMaps, configMap -> {
-				if (configMap.getData() != null && isLeaderChanged(configMap)) {
+				if (isLeaderChanged(configMap)) {
 					// the data field does not correspond to the expected leader information
 					if (logger.isDebugEnabled()) {
 						logger.debug("Correcting leader information in {} by {}.",
 							configMapName, leaderContender.getDescription());
 					}
-					configMap.setData(getCurrentLeaderData());
-					updateConfigMapWithLabels(configMap);
+					updateConfigMap(configMap.getName());
 				}
 			});
 		}
@@ -183,10 +178,9 @@ public class KubernetesLeaderElectionService extends AbstractLeaderElectionServi
 				// the ConfigMap is deleted externally, create a new one
 				if (logger.isDebugEnabled()) {
 					logger.debug("Writing leader information into a new ConfigMap {} by {}.",
-						configMapName, leaderContender.getDescription());
+						configMap.getName(), leaderContender.getDescription());
 				}
-				configMap.setData(getCurrentLeaderData());
-				updateConfigMapWithLabels(configMap);
+				kubeClient.createConfigMap(configMap);
 			});
 		}
 
@@ -221,7 +215,8 @@ public class KubernetesLeaderElectionService extends AbstractLeaderElectionServi
 			final String leaderAddress = configMap.getData().get(LEADER_ADDRESS_KEY);
 			final String leaderSessionID = configMap.getData().get(LEADER_SESSION_ID_KEY);
 			return !(Objects.equals(leaderAddress, confirmedLeaderAddress) &&
-				Objects.equals(leaderSessionID, confirmedLeaderSessionID.toString()));
+				Objects.equals(
+					leaderSessionID, confirmedLeaderSessionID == null ? null : confirmedLeaderSessionID.toString()));
 		}
 	}
 }

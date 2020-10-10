@@ -67,8 +67,6 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 
 	private final String leaderSuffix;
 
-	private final String jobGraphStoreName;
-
 	private final int maxRetryAttempts;
 
 	private final String clusterId;
@@ -101,13 +99,10 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 		this.blobStoreService = blobStoreService;
 
 		this.leaderSuffix = config.getString(KubernetesHighAvailabilityOptions.HA_KUBERNETES_LEADER_SUFFIX);
-		this.jobGraphStoreName = config.getString(KubernetesHighAvailabilityOptions.HA_KUBERNETES_JOBGRAPHS_SUFFIX);
 		this.maxRetryAttempts = config.getInteger(KubernetesHighAvailabilityOptions.KUBERNETES_MAX_RETRY_ATTEMPTS);
 
-		final String runningJobRegistryName = configuration.getString(
-			KubernetesHighAvailabilityOptions.HA_KUBERNETES_RUNNING_JOB_REGISTRY_SUFFIX);
 		this.runningJobsRegistry = new KubernetesRunningJobsRegistry(
-			kubeClient, clusterId + NAME_SEPARATOR + runningJobRegistryName);
+			kubeClient, getLeaderConfigMapName(DISPATCHER_LEADER_NAME));
 	}
 
 	@Override
@@ -165,12 +160,11 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 		final RetrievableStateStorageHelper<JobGraph> stateStorage =
 			new FileSystemStateStorageHelper<>(HighAvailabilityServicesUtils
 				.getClusterHighAvailableStoragePath(configuration), SUBMITTED_JOBGRAPH_FILE_PREFIX);
-		final String configMapName = clusterId + NAME_SEPARATOR + jobGraphStoreName;
+		final String configMapName = getLeaderConfigMapName(DISPATCHER_LEADER_NAME);
 		return new KubernetesJobGraphStore(
 			kubeClient,
 			configMapName,
-			maxRetryAttempts,
-			new KubernetesStateHandleStore<>(kubeClient, executor, configMapName, stateStorage, maxRetryAttempts));
+			new KubernetesStateHandleStore<>(kubeClient, configMapName, stateStorage));
 	}
 
 	@Override
@@ -224,6 +218,7 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 		if (exception != null) {
 			ExceptionUtils.rethrowException(exception, "Could not properly close and clean up all data of KubernetesHaServices.");
 		}
+		LOG.info("Finished cleaning up the high availability data.");
 	}
 
 	private KubernetesLeaderElectionService createLeaderElectionService(String leaderName) {

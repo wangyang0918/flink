@@ -21,23 +21,17 @@ package org.apache.flink.kubernetes.highavailability;
 import org.apache.flink.api.common.JobStatus;
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
+import org.apache.flink.kubernetes.utils.KubernetesUtils;
 import org.apache.flink.runtime.checkpoint.CheckpointIDCounter;
-import org.apache.flink.runtime.concurrent.FutureUtils;
 import org.apache.flink.util.FlinkRuntimeException;
-import org.apache.flink.util.function.FunctionUtils;
-import org.apache.flink.util.function.FunctionWithException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
-import static org.apache.flink.kubernetes.utils.Constants.LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY;
-import static org.apache.flink.kubernetes.utils.Constants.LEADER_CHECKPOINT_COUNTER_KEY;
+import static org.apache.flink.kubernetes.utils.Constants.CHECKPOINT_COUNTER_KEY;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /**
@@ -51,25 +45,15 @@ public class KubernetesCheckpointIDCounter implements CheckpointIDCounter {
 
 	private final FlinkKubeClient kubeClient;
 
-	private final Executor executor;
-
 	private final String configMapName;
-
-	private final int maxRetryAttempts;
 
 	private volatile boolean running;
 
 	private final Supplier<FlinkRuntimeException> configMapNotExistSupplier;
 
-	public KubernetesCheckpointIDCounter(
-			FlinkKubeClient kubeClient,
-			Executor executor,
-			String configMapName,
-			int maxRetryAttempts) {
+	public KubernetesCheckpointIDCounter(FlinkKubeClient kubeClient, String configMapName) {
 		this.kubeClient = checkNotNull(kubeClient, "Kubernetes client should not be null.");
-		this.executor = checkNotNull(executor, "Executor should not be null.");
 		this.configMapName = checkNotNull(configMapName, "ConfigMap name should not be null.");
-		this.maxRetryAttempts = maxRetryAttempts;
 		this.configMapNotExistSupplier =
 			() -> new FlinkRuntimeException("ConfigMap " + configMapName + " does not exist.");
 
@@ -80,9 +64,7 @@ public class KubernetesCheckpointIDCounter implements CheckpointIDCounter {
 	public void start() {
 		synchronized (lock) {
 			if (!running) {
-				final Map<String, String> seed = new HashMap<>();
-				seed.put(LEADER_CHECKPOINT_COUNTER_KEY, "1");
-				kubeClient.createConfigMap(configMapName, seed, LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY);
+				running = true;
 			}
 		}
 	}
@@ -104,12 +86,18 @@ public class KubernetesCheckpointIDCounter implements CheckpointIDCounter {
 
 	@Override
 	public long getAndIncrement() throws Exception {
-		return updateConfigMapWithRetry(configMap -> {
-			final long newCount = getCurrentCounter(configMap) + 1;
-			configMap.getData().put(LEADER_CHECKPOINT_COUNTER_KEY, String.valueOf(newCount));
-			kubeClient.updateConfigMap(configMap).get();
-			return newCount;
-		});
+		final AtomicLong newCounter = new AtomicLong();
+		kubeClient.checkAndUpdateConfigMap(
+			configMapName,
+			KubernetesUtils.getLeaderChecker(),
+			configMap -> {
+				final long newCount = getCurrentCounter(configMap) + 1;
+				configMap.getData().put(CHECKPOINT_COUNTER_KEY, String.valueOf(newCount));
+				newCounter.set(newCount);
+				return configMap;
+			}
+		).get();
+		return newCounter.get();
 	}
 
 	@Override
@@ -121,30 +109,21 @@ public class KubernetesCheckpointIDCounter implements CheckpointIDCounter {
 
 	@Override
 	public void setCount(long newCount) throws Exception {
-		updateConfigMapWithRetry(configMap -> {
-			if (getCurrentCounter(configMap) != newCount) {
-				configMap.getData().put(LEADER_CHECKPOINT_COUNTER_KEY, String.valueOf(newCount));
-				kubeClient.updateConfigMap(configMap).get();
+		kubeClient.checkAndUpdateConfigMap(
+			configMapName,
+			KubernetesUtils.getLeaderChecker(),
+			configMap -> {
+				configMap.getData().put(CHECKPOINT_COUNTER_KEY, String.valueOf(newCount));
+				return configMap;
 			}
-			return newCount;
-		});
+		).get();
 	}
 
 	private long getCurrentCounter(KubernetesConfigMap configMap) {
-		if (configMap.getData() != null && configMap.getData().containsKey(LEADER_CHECKPOINT_COUNTER_KEY)) {
-			return Long.valueOf(configMap.getData().get(LEADER_CHECKPOINT_COUNTER_KEY));
+		if (configMap.getData().containsKey(CHECKPOINT_COUNTER_KEY)) {
+			return Long.valueOf(configMap.getData().get(CHECKPOINT_COUNTER_KEY));
+		} else {
+			return 1;
 		}
-		throw new IllegalStateException("Error while get current counter from ConfigMap " + configMapName);
-	}
-
-	private long updateConfigMapWithRetry(FunctionWithException<KubernetesConfigMap, Long, ?> function) throws Exception {
-		return FutureUtils.retry(
-			() -> CompletableFuture.supplyAsync(
-				() -> kubeClient.getConfigMap(configMapName)
-					.map(FunctionUtils.uncheckedFunction(function))
-					.orElseThrow(configMapNotExistSupplier),
-				executor),
-			maxRetryAttempts,
-			executor).get();
 	}
 }

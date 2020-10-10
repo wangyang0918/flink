@@ -261,43 +261,48 @@ public class Fabric8FlinkKubeClientTest extends KubernetesClientTestBase {
 	}
 
 	@Test
-	public void testCreateAndDeleteConfigMap() throws Exception {
-		this.flinkKubeClient.createJobManagerComponent(this.kubernetesJobManagerSpecification);
-
-		final Map<String, String> data = new HashMap<>();
-		data.put(LEADER_ADDRESS_KEY, LEADER_ADDRESS);
-
-		this.flinkKubeClient.createConfigMap(
-			LEADER_CONFIG_MAP_NAME, data, LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY);
-
-		// Create the same ConfigMap with different data again
-		data.put(LEADER_ADDRESS_KEY, LEADER_ADDRESS_NEW);
-		this.flinkKubeClient.createConfigMap(
-			LEADER_CONFIG_MAP_NAME, data, LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY).get();
-
-		// Check the data should be the old value
-		final Optional<KubernetesConfigMap> optional = this.flinkKubeClient.getConfigMap(LEADER_CONFIG_MAP_NAME);
-		assertThat(optional.isPresent(), is(true));
-		assertThat(LEADER_ADDRESS, is(optional.get().getData().get(LEADER_ADDRESS_KEY)));
-
-		this.flinkKubeClient.deleteConfigMapsByLabels(
-			KubernetesUtils.getConfigMapLabels(CLUSTER_ID, LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY));
+	public void testDeleteConfigMap() {
+		final Map<String, String> labels =
+			KubernetesUtils.getConfigMapLabels(CLUSTER_ID, LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY);
+		buildConfigMap(KubernetesUtils.getConfigMapLabels(CLUSTER_ID, LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY));
+		assertThat(this.flinkKubeClient.getConfigMap(LEADER_CONFIG_MAP_NAME).isPresent(), is(true));
+		this.flinkKubeClient.deleteConfigMapsByLabels(labels);
 		assertThat(this.flinkKubeClient.getConfigMap(LEADER_CONFIG_MAP_NAME).isPresent(), is(false));
 	}
 
 	@Test
-	public void testGetAndUpdateConfigMap() throws ExecutionException, InterruptedException {
-		final Map<String, String> data = new HashMap<>();
-		data.put(LEADER_ADDRESS_KEY, LEADER_ADDRESS);
-		this.flinkKubeClient.createConfigMap(
-			LEADER_CONFIG_MAP_NAME, data, LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY).get();
+	public void testCheckAndUpdateConfigMap() throws ExecutionException, InterruptedException {
+		buildConfigMap(KubernetesUtils.getConfigMapLabels(CLUSTER_ID, LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY));
 
 		final Optional<KubernetesConfigMap> optional = this.flinkKubeClient.getConfigMap(LEADER_CONFIG_MAP_NAME);
 		assertThat(optional.isPresent(), is(true));
-		optional.get().getData().put(LEADER_ADDRESS_KEY, LEADER_ADDRESS_NEW);
-		this.flinkKubeClient.updateConfigMap(optional.get()).get();
-		final Optional<KubernetesConfigMap> optionalNew = this.flinkKubeClient.getConfigMap(LEADER_CONFIG_MAP_NAME);
-		assertThat(optionalNew.isPresent(), is(true));
-		assertThat(optionalNew.get().getData().get(LEADER_ADDRESS_KEY), is(LEADER_ADDRESS_NEW));
+		final KubernetesConfigMap configMap = optional.get();
+		assertThat(configMap.getData().get(LEADER_ADDRESS_KEY), is(LEADER_ADDRESS));
+
+		configMap.getData().put(LEADER_ADDRESS_KEY, LEADER_ADDRESS_NEW);
+
+		// Checker not pass
+		this.flinkKubeClient.checkAndUpdateConfigMap(LEADER_CONFIG_MAP_NAME, c -> false, c -> c).get();
+		final Optional<KubernetesConfigMap> optional1 = this.flinkKubeClient.getConfigMap(LEADER_CONFIG_MAP_NAME);
+		assertThat(optional1.isPresent(), is(true));
+		assertThat(optional1.get().getData().get(LEADER_ADDRESS_KEY), is(LEADER_ADDRESS));
+
+		// Checker pass
+		this.flinkKubeClient.checkAndUpdateConfigMap(LEADER_CONFIG_MAP_NAME, c -> true, c -> c).get();
+		final Optional<KubernetesConfigMap> optional2 = this.flinkKubeClient.getConfigMap(LEADER_CONFIG_MAP_NAME);
+		assertThat(optional2.isPresent(), is(true));
+		assertThat(optional2.get().getData().get(LEADER_ADDRESS_KEY), is(LEADER_ADDRESS_NEW));
+	}
+
+	private void buildConfigMap(Map<String, String> labels) {
+		final Map<String, String> data = new HashMap<>();
+		data.put(LEADER_ADDRESS_KEY, LEADER_ADDRESS);
+		this.kubeClient.configMaps().createNew()
+			.withNewMetadata()
+			.withName(LEADER_CONFIG_MAP_NAME)
+			.withLabels(labels)
+			.endMetadata()
+			.withData(data)
+			.done();
 	}
 }

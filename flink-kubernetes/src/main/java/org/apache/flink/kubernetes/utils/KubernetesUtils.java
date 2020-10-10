@@ -24,6 +24,7 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.CoreOptions;
 import org.apache.flink.configuration.PipelineOptions;
 import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
 import org.apache.flink.runtime.clusterframework.BootstrapTools;
 import org.apache.flink.util.FlinkRuntimeException;
 import org.apache.flink.util.function.FunctionUtils;
@@ -42,10 +43,13 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import static org.apache.flink.kubernetes.utils.Constants.CONFIG_FILE_LOG4J_NAME;
 import static org.apache.flink.kubernetes.utils.Constants.CONFIG_FILE_LOGBACK_NAME;
+import static org.apache.flink.kubernetes.utils.Constants.LEADER_ANNOTATION_KEY;
+import static org.apache.flink.kubernetes.utils.Constants.LOCK_IDENTITY;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /**
@@ -218,6 +222,16 @@ public class KubernetesUtils {
 							" An example of such path is: local:///opt/flink/examples/streaming/WindowJoin.jar");
 				})
 		).collect(Collectors.toList());
+	}
+
+	public static Predicate<KubernetesConfigMap> getLeaderChecker() {
+		return configMap -> {
+			if (configMap.getAnnotations() != null) {
+				final String leader = configMap.getAnnotations().get(LEADER_ANNOTATION_KEY);
+				return leader != null && leader.contains(LOCK_IDENTITY);
+			}
+			return false;
+		};
 	}
 
 	private static String getJavaOpts(Configuration flinkConfig, ConfigOption<String> configOption) {

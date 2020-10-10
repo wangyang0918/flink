@@ -21,7 +21,6 @@ package org.apache.flink.kubernetes.highavailability;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
-import org.apache.flink.kubernetes.configuration.KubernetesHighAvailabilityOptions;
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
 import org.apache.flink.runtime.checkpoint.CheckpointCoordinator;
 import org.apache.flink.runtime.checkpoint.CheckpointIDCounter;
@@ -50,12 +49,7 @@ public class KubernetesCheckpointRecoveryFactory implements CheckpointRecoveryFa
 
 	private final String clusterId;
 
-	private final int maxRetryAttempts;
-
 	private final Configuration configuration;
-
-	private final String checkpointsSuffix;
-	private final String checkpointCounterSuffix;
 
 	public KubernetesCheckpointRecoveryFactory(
 			FlinkKubeClient kubeClient,
@@ -67,13 +61,6 @@ public class KubernetesCheckpointRecoveryFactory implements CheckpointRecoveryFa
 		this.executor = checkNotNull(executor, "Executor");
 		this.clusterId = checkNotNull(
 			configuration.getString(KubernetesConfigOptions.CLUSTER_ID), "Cluster ID");
-		this.maxRetryAttempts = configuration.getInteger(
-			KubernetesHighAvailabilityOptions.KUBERNETES_MAX_RETRY_ATTEMPTS);
-
-		this.checkpointsSuffix = configuration.getString(
-			KubernetesHighAvailabilityOptions.HA_KUBERNETES_CHECKPOINTS_SUFFIX);
-		this.checkpointCounterSuffix = configuration.getString(
-			KubernetesHighAvailabilityOptions.HA_KUBERNETES_CHECKPOINT_COUNTER_SUFFIX);
 	}
 
 	@Override
@@ -85,25 +72,21 @@ public class KubernetesCheckpointRecoveryFactory implements CheckpointRecoveryFa
 		final RetrievableStateStorageHelper<CompletedCheckpoint> stateStorage =
 			new FileSystemStateStorageHelper<>(HighAvailabilityServicesUtils
 				.getClusterHighAvailableStoragePath(configuration), COMPLETED_CHECKPOINT_FILE_SUFFIX);
-		final String configMapName = getConfigMapNameFor(jobID, checkpointsSuffix);
+		final String configMapName = getConfigMapNameForJob(jobID);
 		return new KubernetesCompletedCheckpointStore(
 			kubeClient,
 			configMapName,
 			maxNumberOfCheckpointsToRetain,
-			new KubernetesStateHandleStore<>(kubeClient, executor, configMapName, stateStorage, maxRetryAttempts),
+			new KubernetesStateHandleStore<>(kubeClient, configMapName, stateStorage),
 			executor);
 	}
 
 	@Override
 	public CheckpointIDCounter createCheckpointIDCounter(JobID jobID) {
-		return new KubernetesCheckpointIDCounter(
-			kubeClient,
-			executor,
-			getConfigMapNameFor(jobID, checkpointCounterSuffix),
-			maxRetryAttempts);
+		return new KubernetesCheckpointIDCounter(kubeClient, getConfigMapNameForJob(jobID));
 	}
 
-	private String getConfigMapNameFor(JobID jobID, String suffix) {
-		return clusterId + NAME_SEPARATOR + jobID.toString() + NAME_SEPARATOR + suffix;
+	private String getConfigMapNameForJob(JobID jobId) {
+		return clusterId + NAME_SEPARATOR + jobId.toString() + NAME_SEPARATOR + "jobmanager-leader";
 	}
 }

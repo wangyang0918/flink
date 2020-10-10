@@ -28,8 +28,9 @@ import io.fabric8.kubernetes.client.extended.leaderelection.resourcelock.ConfigM
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import static org.apache.flink.kubernetes.utils.Constants.LOCK_IDENTITY;
 
 /**
  * Represent Leader Elector in kubernetes.
@@ -37,7 +38,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class KubernetesLeaderElector extends LeaderElector<NamespacedKubernetesClient> {
 
 	private static final Logger LOG = LoggerFactory.getLogger(KubernetesLeaderElector.class);
-	private static final String lockIdentity = UUID.randomUUID().toString();
 	private final LeaderCallbackHandler leaderCallbackHandler;
 
 	public KubernetesLeaderElector(
@@ -48,7 +48,7 @@ public class KubernetesLeaderElector extends LeaderElector<NamespacedKubernetesC
 		super(kubernetesClient, new LeaderElectionConfigBuilder()
 			.withName(leaderConfig.getConfigMapName())
 			.withLeaseDuration(leaderConfig.getLeaseDuration())
-			.withLock(new ConfigMapLock(namespace, leaderConfig.getConfigMapName(), lockIdentity))
+			.withLock(new ConfigMapLock(namespace, leaderConfig.getConfigMapName(), LOCK_IDENTITY))
 			.withRenewDeadline(leaderConfig.getRenewDeadline())
 			.withRetryPeriod(leaderConfig.getRetryPeriod())
 			.withLeaderCallbacks(new LeaderCallbacks(
@@ -59,7 +59,7 @@ public class KubernetesLeaderElector extends LeaderElector<NamespacedKubernetesC
 			.build());
 		this.leaderCallbackHandler = leaderCallbackHandler;
 		LOG.info("Create KubernetesLeaderElector {} with lock identity {}.",
-			leaderConfig.getConfigMapName(), lockIdentity);
+			leaderConfig.getConfigMapName(), LOCK_IDENTITY);
 	}
 
 	public boolean hasLeadership() {

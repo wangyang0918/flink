@@ -40,7 +40,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.apache.flink.kubernetes.utils.Constants.LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.Assert.assertThat;
@@ -82,7 +81,6 @@ public class KubernetesHighAvailabilityTestBase extends TestLogger {
 				return new TestingFlinkKubeClient.MockKubernetesWatch();
 			})
 			.setLeaderController(leaderController).build();
-		flinkKubeClient.createConfigMap(LEADER_CONFIGMAP_NAME, new HashMap<>(), LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY);
 		return new KubernetesLeaderElectionService(
 			flinkKubeClient,
 			executorService,

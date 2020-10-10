@@ -28,8 +28,13 @@ import static org.apache.flink.configuration.ConfigOptions.key;
 
 /**
  * The set of configuration options relating to Kubernetes high-availability settings.
- * All the HA metadata will be stored in the Kubernetes ConfigMap named with the following pattern.
- * {clusterId}-{component}-{suffix}
+ * All the HA information relevant for a specific component will be stored in a single ConfigMap.
+ * For example, the Dispatcher's ConfigMap would then contain the current leader, the running jobs
+ * and the pointers to the persisted JobGraphs.
+ * The JobManager's ConfigMap would then contain the current leader, the pointers to the checkpoints
+ * and the checkpoint ID counter.
+ *
+ * <p>The ConfigMap name will be created with the following pattern.
  * e.g. k8s-ha-app1-restserver-leader, k8s-ha-app1-00000000000000000000000000000000-jobmanager
  */
 @PublicEvolving
@@ -42,34 +47,6 @@ public class KubernetesHighAvailabilityOptions {
 			.defaultValue("leader")
 			.withDescription("The ConfigMap suffix of the leader which contains the URL to the leader and the " +
 				"current leader session ID. Leader elector will use the same ConfigMap for contending the lock.");
-
-	@Documentation.Section(Documentation.Sections.EXPERT_KUBERNETES_HIGH_AVAILABILITY)
-	public static final ConfigOption<String> HA_KUBERNETES_JOBGRAPHS_SUFFIX =
-			key("high-availability.kubernetes.jobgraphs.suffix")
-			.stringType()
-			.defaultValue("jobgraphs")
-			.withDescription("The ConfigMap suffix of job graph store.");
-
-	@Documentation.Section(Documentation.Sections.EXPERT_KUBERNETES_HIGH_AVAILABILITY)
-	public static final ConfigOption<String> HA_KUBERNETES_CHECKPOINTS_SUFFIX =
-			key("high-availability.kubernetes.checkpoints.suffix")
-			.stringType()
-			.defaultValue("checkpoints")
-			.withDescription("The ConfigMap suffix for completed checkpoints.");
-
-	@Documentation.Section(Documentation.Sections.EXPERT_KUBERNETES_HIGH_AVAILABILITY)
-	public static final ConfigOption<String> HA_KUBERNETES_CHECKPOINT_COUNTER_SUFFIX =
-			key("high-availability.kubernetes.checkpoint-counter.suffix")
-			.stringType()
-			.defaultValue("checkpoint-counter")
-			.withDescription("The ConfigMap suffix for checkpoint counters.");
-
-	@Documentation.Section(Documentation.Sections.EXPERT_KUBERNETES_HIGH_AVAILABILITY)
-	public static final ConfigOption<String> HA_KUBERNETES_RUNNING_JOB_REGISTRY_SUFFIX =
-			key("high-availability.kubernetes.running-job-registry.suffix")
-			.stringType()
-			.defaultValue("running-job-registry")
-			.withDescription("The ConfigMap suffix for running job registry.");
 
 	@Documentation.Section(Documentation.Sections.EXPERT_KUBERNETES_HIGH_AVAILABILITY)
 	public static final ConfigOption<Duration> KUBERNETES_LEASE_DURATION =

@@ -24,7 +24,10 @@ import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesService;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesWatch;
 import org.apache.flink.runtime.concurrent.FutureUtils;
+import org.apache.flink.util.FlinkRuntimeException;
 import org.apache.flink.util.Preconditions;
+import org.apache.flink.util.function.FunctionUtils;
+import org.apache.flink.util.function.FunctionWithException;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -36,6 +39,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
+
+import static org.apache.flink.kubernetes.utils.Constants.LEADER_ANNOTATION_KEY;
+import static org.apache.flink.kubernetes.utils.Constants.LOCK_IDENTITY;
 
 /**
  * Testing implementation of {@link FlinkKubeClient}.
@@ -125,20 +132,34 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 	}
 
 	@Override
-	public CompletableFuture<Void> createConfigMap(String name, Map<String, String> data, String type) {
-		configMapStore.putIfAbsent(name, new MockKubernetesConfigMap(name, data));
-		return FutureUtils.completedVoidFuture();
+	public CompletableFuture<Void> createConfigMap(KubernetesConfigMap configMap) {
+		configMapStore.putIfAbsent(configMap.getName(), configMap);
+		return CompletableFuture.completedFuture(null);
 	}
 
 	@Override
 	public Optional<KubernetesConfigMap> getConfigMap(String name) {
-		return Optional.ofNullable(configMapStore.get(name));
+		final KubernetesConfigMap configMap = configMapStore.get(name);
+		if (configMap == null) {
+			return Optional.empty();
+		}
+		return Optional.of(new MockKubernetesConfigMap(configMap.getName(), new HashMap<>(configMap.getData())));
 	}
 
 	@Override
-	public CompletableFuture<Void> updateConfigMap(KubernetesConfigMap configMap) {
-		configMapStore.put(configMap.getName(), configMap);
-		return FutureUtils.completedVoidFuture();
+	public CompletableFuture<Boolean> checkAndUpdateConfigMap(
+			String configMapName,
+			Predicate<KubernetesConfigMap> checker,
+			FunctionWithException<KubernetesConfigMap, KubernetesConfigMap, ?> function) {
+		return getConfigMap(configMapName).map(FunctionUtils.uncheckedFunction(
+			configMap -> {
+				final boolean shouldUpdate = checker.test(configMap);
+				if (shouldUpdate) {
+					configMapStore.put(configMap.getName(), function.apply(configMap));
+				}
+				return CompletableFuture.completedFuture(shouldUpdate);
+			}))
+			.orElseThrow(() -> new FlinkRuntimeException("ConfigMap " + configMapName + " not exists."));
 	}
 
 	@Override
@@ -285,19 +306,15 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 		}
 
 		@Override
-		public void setData(Map<String, String> data) {
-			this.data.clear();
-			this.data.putAll(data);
+		public Map<String, String> getAnnotations() {
+			final Map<String, String> annotations = new HashMap<>();
+			annotations.put(LEADER_ANNOTATION_KEY, LOCK_IDENTITY);
+			return annotations;
 		}
 
 		@Override
 		public Map<String, String> getLabels() {
 			return this.labels;
-		}
-
-		@Override
-		public void setLabels(Map<String, String> labels) {
-			this.labels.putAll(labels);
 		}
 	}
 
@@ -334,6 +351,9 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 					return;
 				}
 			}
+			configMapStore.put(
+				leaderConfig.getConfigMapName(),
+				new MockKubernetesConfigMap(leaderConfig.getConfigMapName(), new HashMap<>()));
 			leaderCallbackHandler.isLeader();
 			// Try to keep the leader position
 			while (leaderController.get()) {

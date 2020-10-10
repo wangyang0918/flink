@@ -33,14 +33,16 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.ConcurrentModificationException;
-import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.Executor;
 
-import static org.apache.flink.kubernetes.utils.Constants.LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY;
+import static org.apache.flink.kubernetes.utils.Constants.CHECKPOINT_COUNTER_KEY;
+import static org.apache.flink.kubernetes.utils.Constants.LEADER_ADDRESS_KEY;
+import static org.apache.flink.kubernetes.utils.Constants.LEADER_SESSION_ID_KEY;
 import static org.apache.flink.util.Preconditions.checkArgument;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
@@ -101,14 +103,15 @@ public class KubernetesCompletedCheckpointStore implements CompletedCheckpointSt
 	@Override
 	public void recover() throws Exception {
 		LOG.info("Recovering checkpoints from Kubernetes.");
-		// Create the ConfigMap if not exist.
-		kubeClient.createConfigMap(configMapName, new HashMap<>(), LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY);
+
+		final List<String> keysToFilterOut = Arrays.asList(
+			LEADER_ADDRESS_KEY, LEADER_SESSION_ID_KEY, CHECKPOINT_COUNTER_KEY);
 
 		// Get all there is first
 		List<Tuple2<RetrievableStateHandle<CompletedCheckpoint>, String>> initialCheckpoints;
 		while (true) {
 			try {
-				initialCheckpoints = checkpointsInKubernetes.getAllAndLock();
+				initialCheckpoints = checkpointsInKubernetes.getAll(entry -> !keysToFilterOut.contains(entry.getKey()));
 				break;
 			}
 			catch (ConcurrentModificationException e) {
@@ -157,6 +160,7 @@ public class KubernetesCompletedCheckpointStore implements CompletedCheckpointSt
 					}
 				} catch (Exception e) {
 					LOG.warn("Could not retrieve checkpoint, not adding to list of recovered checkpoints.", e);
+					checkpointsInKubernetes.remove(checkpointStateHandle.f1);
 				}
 			}
 
@@ -186,8 +190,10 @@ public class KubernetesCompletedCheckpointStore implements CompletedCheckpointSt
 
 		final String key = checkpointIdToKey(checkpoint.getCheckpointID());
 
+		LOG.debug("Adding {} to {}.", checkpoint, configMapName);
+
 		// Now add the new one. If it fails, we don't want to loose existing data.
-		checkpointsInKubernetes.addAndLock(key, checkpoint);
+		checkpointsInKubernetes.add(key, checkpoint);
 
 		completedCheckpoints.addLast(checkpoint);
 
@@ -197,7 +203,7 @@ public class KubernetesCompletedCheckpointStore implements CompletedCheckpointSt
 			tryRemoveCompletedCheckpoint(completedCheckpoint, CompletedCheckpoint::discardOnSubsume);
 		}
 
-		LOG.debug("Added {} to {}.", checkpoint, key);
+		LOG.debug("Added {} to {}.", checkpoint, configMapName);
 	}
 
 	@Override
@@ -233,7 +239,6 @@ public class KubernetesCompletedCheckpointStore implements CompletedCheckpointSt
 			LOG.info("Suspending");
 
 			// Clear the local handles, but don't remove any state
-			checkpointsInKubernetes.releaseAll();
 			completedCheckpoints.clear();
 		}
 	}
@@ -256,7 +261,7 @@ public class KubernetesCompletedCheckpointStore implements CompletedCheckpointSt
 	}
 
 	private boolean tryRemove(long checkpointId) throws Exception {
-		return checkpointsInKubernetes.releaseAndTryRemove(checkpointIdToKey(checkpointId));
+		return checkpointsInKubernetes.remove(checkpointIdToKey(checkpointId));
 	}
 
 	private static String checkpointIdToKey(long checkpointId) {

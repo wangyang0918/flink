@@ -35,8 +35,6 @@ import org.apache.flink.shaded.zookeeper3.org.apache.zookeeper.CreateMode;
 import org.apache.flink.shaded.zookeeper3.org.apache.zookeeper.KeeperException;
 import org.apache.flink.shaded.zookeeper3.org.apache.zookeeper.data.Stat;
 
-import javax.annotation.Nonnull;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
@@ -128,11 +126,6 @@ public class ZooKeeperLeaderElectionService extends AbstractLeaderElectionServic
 	}
 
 	@Override
-	public boolean hasLeadership(@Nonnull UUID leaderSessionId) {
-		return leaderLatch.hasLeadership() && leaderSessionId.equals(issuedLeaderSessionID);
-	}
-
-	@Override
 	public void isLeader() {
 		onGrantLeadership();
 	}
@@ -211,6 +204,7 @@ public class ZooKeeperLeaderElectionService extends AbstractLeaderElectionServic
 	/**
 	 * Writes the current leader's address as well the given leader session ID to ZooKeeper.
 	 */
+	@Override
 	protected void writeLeaderInformation() {
 		// this method does not have to be synchronized because the curator framework client
 		// is thread-safe

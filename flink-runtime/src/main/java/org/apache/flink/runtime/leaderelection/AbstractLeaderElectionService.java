@@ -23,6 +23,7 @@ import org.apache.flink.util.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nonnull;
 import java.util.UUID;
 
 /**
@@ -112,6 +113,11 @@ public abstract class AbstractLeaderElectionService implements LeaderElectionSer
 			logger.warn("The leader session ID {} was confirmed even though the " +
 				"corresponding JobManager was not elected as the leader.", leaderSessionID);
 		}
+	}
+
+	@Override
+	public boolean hasLeadership(@Nonnull UUID leaderSessionId) {
+		return checkLeaderLatch() && leaderSessionId.equals(issuedLeaderSessionID);
 	}
 
 	/**

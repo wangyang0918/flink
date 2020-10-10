@@ -23,11 +23,13 @@ import org.apache.flink.kubernetes.kubeclient.resources.KubernetesLeaderElector;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesService;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesWatch;
+import org.apache.flink.util.function.FunctionWithException;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Predicate;
 
 /**
  * The client to talk with kubernetes. The interfaces will be called both in Client and ResourceManager. To avoid
@@ -118,15 +120,13 @@ public interface FlinkKubeClient extends AutoCloseable {
 		KubernetesLeaderElector.LeaderCallbackHandler leaderCallbackHandler);
 
 	/**
-	 * Create a new ConfigMap with the data.
+	 * Create the ConfigMap with specified content. If the ConfigMap already exists, nothing will happen.
 	 *
-	 * @param name ConfigMap name
-	 * @param data Data of the ConfigMap. If the ConfigMap already exist, nothing will happen.
-	 * @param type ConfigMap type, currently it could only be high-availability and could be extended in the future.
+	 * @param configMap ConfigMap.
 	 *
-	 * @return Return the ConfigMap creation future.
+	 * @return Return the ConfigMap create future.
 	 */
-	CompletableFuture<Void> createConfigMap(String name, Map<String, String> data, String type);
+	CompletableFuture<Void> createConfigMap(KubernetesConfigMap configMap);
 
 	/**
 	 * Get the ConfigMap with specified name.
@@ -140,14 +140,20 @@ public interface FlinkKubeClient extends AutoCloseable {
 	/**
 	 * Update an existing ConfigMap with the data.
 	 *
-	 * @param configMap ConfigMap to be replaced with. Benefit from <a href=https://kubernetes.io/docs/reference/using-api/api-concepts/#resource-versions>
-	 *                  resource version</a> and combined with {@link #getConfigMap(String)}, we could perform a get-and-update
-	 *                  transactional operation. Since concurrent modification could happen on a same ConfigMap in corner
-	 *                  case, the update operation may fail. The caller needs to handle such situation and retry with more attempts.
+	 * @param configMapName ConfigMap to be replaced with. Benefit from <a href=https://kubernetes.io/docs/reference/using-api/api-concepts/#resource-versions>
+	 *                      resource version</a> and combined with {@link #getConfigMap(String)}, we could perform a get-check-and-update
+	 *                      transactional operation. Since concurrent modification could happen on a same ConfigMap,
+	 *                      the update operation may fail. We need to retry internally. The max retry attempts could be
+	 *                      configured via {@link org.apache.flink.kubernetes.configuration.KubernetesHighAvailabilityOptions#KUBERNETES_MAX_RETRY_ATTEMPTS}.
+	 * @param checker       Only the checker return true, the ConfigMap will be updated.
+	 * @param function      The obtained ConfigMap will be applied to this function and get a new one to replace.
 	 *
 	 * @return Return the ConfigMap update future.
 	 */
-	CompletableFuture<Void> updateConfigMap(KubernetesConfigMap configMap);
+	CompletableFuture<Boolean> checkAndUpdateConfigMap(
+		String configMapName,
+		Predicate<KubernetesConfigMap> checker,
+		FunctionWithException<KubernetesConfigMap, KubernetesConfigMap, ?> function);
 
 	/**
 	 * Watch the ConfigMaps with specified name and do the {@link WatchCallbackHandler}.

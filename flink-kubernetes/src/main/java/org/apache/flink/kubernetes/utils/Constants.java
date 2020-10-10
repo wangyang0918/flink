@@ -18,6 +18,8 @@
 
 package org.apache.flink.kubernetes.utils;
 
+import java.util.UUID;
+
 /**
  * Constants for kubernetes.
  */
@@ -86,5 +88,10 @@ public class Constants {
 	// Constants for Kubernetes high availability
 	public static final String LEADER_ADDRESS_KEY = "address";
 	public static final String LEADER_SESSION_ID_KEY = "sessionId";
-	public static final String LEADER_CHECKPOINT_COUNTER_KEY = "counter";
+	public static final String CHECKPOINT_COUNTER_KEY = "counter";
+	public static final String RUNNING_JOBS_REGISTRY_KEY_PREFIX = "runningJobsRegistry";
+	public static final String JOB_GRAPH_STORE_KEY_PREFIX = "jobGraph";
+
+	public static final String LOCK_IDENTITY = UUID.randomUUID().toString();
+	public static final String LEADER_ANNOTATION_KEY = "control-plane.alpha.kubernetes.io/leader";
 }

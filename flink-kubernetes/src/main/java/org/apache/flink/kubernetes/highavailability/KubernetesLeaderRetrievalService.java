@@ -144,7 +144,6 @@ class KubernetesLeaderRetrievalService implements LeaderRetrievalService {
 
 		private void handleEvent(List<KubernetesConfigMap> configMaps) {
 			configMaps.stream()
-				.filter(e -> e.getData() != null)
 				.forEach(e -> {
 					final String leaderAddress = e.getData().get(LEADER_ADDRESS_KEY);
 					final String sessionID = e.getData().get(LEADER_SESSION_ID_KEY);
