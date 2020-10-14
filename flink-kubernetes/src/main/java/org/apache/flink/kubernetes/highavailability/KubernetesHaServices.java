@@ -55,26 +55,24 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 
 	private static final Logger LOG = LoggerFactory.getLogger(KubernetesHaServices.class);
 
-	private static final String RESOURCE_MANAGER_LEADER_NAME = "resourcemanager";
+	private static final String RESOURCE_MANAGER_NAME = "resourcemanager";
 
-	private static final String DISPATCHER_LEADER_NAME = "dispatcher";
+	private static final String DISPATCHER_NAME = "dispatcher";
 
-	private static final String JOB_MANAGER_LEADER_NAME = "jobmanager";
+	private static final String JOB_MANAGER_NAME = "jobmanager";
 
-	private static final String REST_SERVER_LEADER_NAME = "restserver";
+	private static final String REST_SERVER_NAME = "restserver";
 
 	private static final String SUBMITTED_JOBGRAPH_FILE_PREFIX = "submittedJobGraph";
 
 	private final String leaderSuffix;
-
-	private final int maxRetryAttempts;
 
 	private final String clusterId;
 
 	/** Kubernetes client. */
 	private final FlinkKubeClient kubeClient;
 
-	/** The executor to run ZooKeeper callbacks on. */
+	/** The executor to run Kubernetes operations on. */
 	private final Executor executor;
 
 	/** The runtime configuration. */
@@ -99,20 +97,19 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 		this.blobStoreService = blobStoreService;
 
 		this.leaderSuffix = config.getString(KubernetesHighAvailabilityOptions.HA_KUBERNETES_LEADER_SUFFIX);
-		this.maxRetryAttempts = config.getInteger(KubernetesHighAvailabilityOptions.KUBERNETES_MAX_RETRY_ATTEMPTS);
 
 		this.runningJobsRegistry = new KubernetesRunningJobsRegistry(
-			kubeClient, getLeaderConfigMapName(DISPATCHER_LEADER_NAME));
+			kubeClient, getLeaderConfigMapName(DISPATCHER_NAME));
 	}
 
 	@Override
 	public LeaderRetrievalService getResourceManagerLeaderRetriever() {
-		return createLeaderRetrievalService(RESOURCE_MANAGER_LEADER_NAME);
+		return createLeaderRetrievalService(RESOURCE_MANAGER_NAME);
 	}
 
 	@Override
 	public LeaderRetrievalService getDispatcherLeaderRetriever() {
-		return createLeaderRetrievalService(DISPATCHER_LEADER_NAME);
+		return createLeaderRetrievalService(DISPATCHER_NAME);
 	}
 
 	@Override
@@ -127,17 +124,17 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 
 	@Override
 	public LeaderRetrievalService getClusterRestEndpointLeaderRetriever() {
-		return createLeaderRetrievalService(REST_SERVER_LEADER_NAME);
+		return createLeaderRetrievalService(REST_SERVER_NAME);
 	}
 
 	@Override
 	public LeaderElectionService getResourceManagerLeaderElectionService() {
-		return createLeaderElectionService(RESOURCE_MANAGER_LEADER_NAME);
+		return createLeaderElectionService(RESOURCE_MANAGER_NAME);
 	}
 
 	@Override
 	public LeaderElectionService getDispatcherLeaderElectionService() {
-		return createLeaderElectionService(DISPATCHER_LEADER_NAME);
+		return createLeaderElectionService(DISPATCHER_NAME);
 	}
 
 	@Override
@@ -147,7 +144,7 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 
 	@Override
 	public LeaderElectionService getClusterRestEndpointLeaderElectionService() {
-		return createLeaderElectionService(REST_SERVER_LEADER_NAME);
+		return createLeaderElectionService(REST_SERVER_NAME);
 	}
 
 	@Override
@@ -160,7 +157,7 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 		final RetrievableStateStorageHelper<JobGraph> stateStorage =
 			new FileSystemStateStorageHelper<>(HighAvailabilityServicesUtils
 				.getClusterHighAvailableStoragePath(configuration), SUBMITTED_JOBGRAPH_FILE_PREFIX);
-		final String configMapName = getLeaderConfigMapName(DISPATCHER_LEADER_NAME);
+		final String configMapName = getLeaderConfigMapName(DISPATCHER_NAME);
 		return new KubernetesJobGraphStore(
 			kubeClient,
 			configMapName,
@@ -237,7 +234,7 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 	}
 
 	private static String getLeaderNameForJobManager(final JobID jobID) {
-		return jobID.toString() + NAME_SEPARATOR + JOB_MANAGER_LEADER_NAME;
+		return jobID.toString() + NAME_SEPARATOR + JOB_MANAGER_NAME;
 	}
 }
 

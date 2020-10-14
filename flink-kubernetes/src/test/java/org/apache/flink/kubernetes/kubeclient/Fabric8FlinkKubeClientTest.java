@@ -279,8 +279,6 @@ public class Fabric8FlinkKubeClientTest extends KubernetesClientTestBase {
 		final KubernetesConfigMap configMap = optional.get();
 		assertThat(configMap.getData().get(LEADER_ADDRESS_KEY), is(LEADER_ADDRESS));
 
-		configMap.getData().put(LEADER_ADDRESS_KEY, LEADER_ADDRESS_NEW);
-
 		// Checker not pass
 		this.flinkKubeClient.checkAndUpdateConfigMap(LEADER_CONFIG_MAP_NAME, c -> false, c -> c).get();
 		final Optional<KubernetesConfigMap> optional1 = this.flinkKubeClient.getConfigMap(LEADER_CONFIG_MAP_NAME);
@@ -288,7 +286,13 @@ public class Fabric8FlinkKubeClientTest extends KubernetesClientTestBase {
 		assertThat(optional1.get().getData().get(LEADER_ADDRESS_KEY), is(LEADER_ADDRESS));
 
 		// Checker pass
-		this.flinkKubeClient.checkAndUpdateConfigMap(LEADER_CONFIG_MAP_NAME, c -> true, c -> c).get();
+		this.flinkKubeClient.checkAndUpdateConfigMap(
+			LEADER_CONFIG_MAP_NAME,
+			c -> true,
+			c -> {
+				c.getData().put(LEADER_ADDRESS_KEY, LEADER_ADDRESS_NEW);
+				return c;
+			}).get();
 		final Optional<KubernetesConfigMap> optional2 = this.flinkKubeClient.getConfigMap(LEADER_CONFIG_MAP_NAME);
 		assertThat(optional2.isPresent(), is(true));
 		assertThat(optional2.get().getData().get(LEADER_ADDRESS_KEY), is(LEADER_ADDRESS_NEW));

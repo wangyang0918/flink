@@ -35,7 +35,7 @@ import static org.apache.flink.configuration.ConfigOptions.key;
  * and the checkpoint ID counter.
  *
  * <p>The ConfigMap name will be created with the following pattern.
- * e.g. k8s-ha-app1-restserver-leader, k8s-ha-app1-00000000000000000000000000000000-jobmanager
+ * e.g. k8s-ha-app1-restserver-leader, k8s-ha-app1-00000000000000000000000000000000-jobmanager-leader
  */
 @PublicEvolving
 public class KubernetesHighAvailabilityOptions {
