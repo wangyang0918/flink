@@ -28,8 +28,8 @@ import org.apache.flink.runtime.checkpoint.CheckpointRecoveryFactory;
 import org.apache.flink.runtime.checkpoint.CompletedCheckpoint;
 import org.apache.flink.runtime.checkpoint.CompletedCheckpointStore;
 import org.apache.flink.runtime.highavailability.HighAvailabilityServicesUtils;
-import org.apache.flink.runtime.zookeeper.RetrievableStateStorageHelper;
-import org.apache.flink.runtime.zookeeper.filesystem.FileSystemStateStorageHelper;
+import org.apache.flink.runtime.highavailability.helper.RetrievableStateStorageHelper;
+import org.apache.flink.runtime.highavailability.helper.filesystem.FileSystemStateStorageHelper;
 
 import java.util.concurrent.Executor;
 

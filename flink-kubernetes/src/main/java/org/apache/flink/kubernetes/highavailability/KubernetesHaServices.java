@@ -31,12 +31,12 @@ import org.apache.flink.runtime.checkpoint.CheckpointRecoveryFactory;
 import org.apache.flink.runtime.highavailability.HighAvailabilityServices;
 import org.apache.flink.runtime.highavailability.HighAvailabilityServicesUtils;
 import org.apache.flink.runtime.highavailability.RunningJobsRegistry;
+import org.apache.flink.runtime.highavailability.helper.RetrievableStateStorageHelper;
+import org.apache.flink.runtime.highavailability.helper.filesystem.FileSystemStateStorageHelper;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobmanager.JobGraphStore;
 import org.apache.flink.runtime.leaderelection.LeaderElectionService;
 import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalService;
-import org.apache.flink.runtime.zookeeper.RetrievableStateStorageHelper;
-import org.apache.flink.runtime.zookeeper.filesystem.FileSystemStateStorageHelper;
 import org.apache.flink.util.ExceptionUtils;
 
 import org.slf4j.Logger;
@@ -213,7 +213,8 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 		kubeClient.close();
 
 		if (exception != null) {
-			ExceptionUtils.rethrowException(exception, "Could not properly close and clean up all data of KubernetesHaServices.");
+			ExceptionUtils.rethrowException(
+				exception, "Could not properly close and clean up all data of KubernetesHaServices.");
 		}
 		LOG.info("Finished cleaning up the high availability data.");
 	}

@@ -32,7 +32,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.function.Consumer;
 
 import static org.apache.flink.kubernetes.utils.Constants.LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY;
 import static org.apache.flink.kubernetes.utils.Constants.LEADER_ADDRESS_KEY;
@@ -88,18 +87,20 @@ public class KubernetesLeaderElectionService extends AbstractLeaderElectionServi
 	}
 
 	@Override
-	public String toString() {
-		return "KubernetesLeaderElectionService{configMapName='" + configMapName + "'}";
-	}
-
-	@Override
 	protected void writeLeaderInformation() {
 		updateConfigMap(configMapName);
 	}
 
 	@Override
 	protected boolean checkLeaderLatch() {
-		return leaderElector.hasLeadership();
+		return kubeClient.getConfigMap(configMapName)
+			.map(configMap -> KubernetesUtils.getLeaderChecker().test(configMap))
+			.orElse(false);
+	}
+
+	@Override
+	public String toString() {
+		return "KubernetesLeaderElectionService{configMapName='" + configMapName + "'}";
 	}
 
 	private void updateConfigMap(String configMapName) {
@@ -160,27 +161,31 @@ public class KubernetesLeaderElectionService extends AbstractLeaderElectionServi
 
 		@Override
 		public void onModified(List<KubernetesConfigMap> configMaps) {
-			handleEvent(configMaps, configMap -> {
-				if (isLeaderChanged(configMap)) {
-					// the data field does not correspond to the expected leader information
-					if (logger.isDebugEnabled()) {
-						logger.debug("Correcting leader information in {} by {}.",
-							configMapName, leaderContender.getDescription());
+			if (checkLeaderLatch()) {
+				configMaps.forEach(configMap -> {
+					if (isLeaderChanged(configMap)) {
+						// the data field does not correspond to the expected leader information
+						if (logger.isDebugEnabled()) {
+							logger.debug("Correcting leader information in {} by {}.",
+								configMapName, leaderContender.getDescription());
+						}
+						updateConfigMap(configMap.getName());
 					}
-					updateConfigMap(configMap.getName());
-				}
-			});
+				});
+			}
 		}
 
 		@Override
 		public void onDeleted(List<KubernetesConfigMap> configMaps) {
-			handleEvent(configMaps, configMap -> {
-				// the ConfigMap is deleted externally, create a new one
-				if (logger.isDebugEnabled()) {
-					logger.debug("Writing leader information into a new ConfigMap {} by {}.",
-						configMap.getName(), leaderContender.getDescription());
+			// the ConfigMap is deleted externally, create a new one
+			configMaps.forEach(configMap -> {
+				if (KubernetesUtils.getLeaderChecker().test(configMap)) {
+					if (logger.isDebugEnabled()) {
+						logger.debug("Writing leader information into a new ConfigMap {} by {}.",
+							configMap.getName(), leaderContender.getDescription());
+					}
+					kubeClient.createConfigMap(configMap);
 				}
-				kubeClient.createConfigMap(configMap);
 			});
 		}
 
@@ -194,24 +199,8 @@ public class KubernetesLeaderElectionService extends AbstractLeaderElectionServi
 			leaderContender.handleError(new Exception("Fatal error while watching the configMap " + configMapName));
 		}
 
-		private void handleEvent(List<KubernetesConfigMap> configMaps, Consumer<KubernetesConfigMap> consumer) {
-			try {
-				if (leaderElector.hasLeadership()) {
-					synchronized (lock) {
-						if (running) {
-							configMaps.forEach(consumer);
-						}
-					}
-				}
-			} catch (Exception e) {
-				leaderContender.handleError(new Exception("Could not handle ConfigMap changed event.", e));
-				throw e;
-			}
-		}
-
 		private boolean isLeaderChanged(KubernetesConfigMap configMap) {
 			checkNotNull(configMap);
-			checkNotNull(configMap.getData());
 			final String leaderAddress = configMap.getData().get(LEADER_ADDRESS_KEY);
 			final String leaderSessionID = configMap.getData().get(LEADER_SESSION_ID_KEY);
 			return !(Objects.equals(leaderAddress, confirmedLeaderAddress) &&

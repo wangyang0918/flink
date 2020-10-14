@@ -143,29 +143,28 @@ class KubernetesLeaderRetrievalService implements LeaderRetrievalService {
 		}
 
 		private void handleEvent(List<KubernetesConfigMap> configMaps) {
-			configMaps.stream()
-				.forEach(e -> {
-					final String leaderAddress = e.getData().get(LEADER_ADDRESS_KEY);
-					final String sessionID = e.getData().get(LEADER_SESSION_ID_KEY);
-					if (leaderAddress != null && sessionID != null) {
-						final UUID leaderSessionID = UUID.fromString(sessionID);
-						if (!(Objects.equals(leaderAddress, lastLeaderAddress) &&
-							Objects.equals(leaderSessionID, lastLeaderSessionID))) {
-							LOG.debug(
-								"New leader information: Leader={}, session ID={}.",
-								leaderAddress,
-								leaderSessionID);
+			configMaps.forEach(e -> {
+				final String leaderAddress = e.getData().get(LEADER_ADDRESS_KEY);
+				final String sessionID = e.getData().get(LEADER_SESSION_ID_KEY);
+				if (leaderAddress != null && sessionID != null) {
+					final UUID leaderSessionID = UUID.fromString(sessionID);
+					if (!(Objects.equals(leaderAddress, lastLeaderAddress) &&
+						Objects.equals(leaderSessionID, lastLeaderSessionID))) {
+						LOG.debug(
+							"New leader information: Leader={}, session ID={}.",
+							leaderAddress,
+							leaderSessionID);
 
-							lastLeaderAddress = leaderAddress;
-							lastLeaderSessionID = leaderSessionID;
-							leaderListener.notifyLeaderAddress(leaderAddress, leaderSessionID);
-						}
-					} else {
-						LOG.debug("Leader information was lost: The listener will be notified accordingly.");
-						leaderListener.notifyLeaderAddress(
-							leaderAddress, sessionID == null ? null : UUID.fromString(sessionID));
+						lastLeaderAddress = leaderAddress;
+						lastLeaderSessionID = leaderSessionID;
+						leaderListener.notifyLeaderAddress(leaderAddress, leaderSessionID);
 					}
-				});
+				} else {
+					LOG.debug("Leader information was lost: The listener will be notified accordingly.");
+					leaderListener.notifyLeaderAddress(
+						leaderAddress, sessionID == null ? null : UUID.fromString(sessionID));
+				}
+			});
 		}
 	}
 }

@@ -28,8 +28,6 @@ import io.fabric8.kubernetes.client.extended.leaderelection.resourcelock.ConfigM
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
 import static org.apache.flink.kubernetes.utils.Constants.LOCK_IDENTITY;
 
 /**
@@ -38,7 +36,6 @@ import static org.apache.flink.kubernetes.utils.Constants.LOCK_IDENTITY;
 public class KubernetesLeaderElector extends LeaderElector<NamespacedKubernetesClient> {
 
 	private static final Logger LOG = LoggerFactory.getLogger(KubernetesLeaderElector.class);
-	private final LeaderCallbackHandler leaderCallbackHandler;
 
 	public KubernetesLeaderElector(
 			NamespacedKubernetesClient kubernetesClient,
@@ -52,18 +49,13 @@ public class KubernetesLeaderElector extends LeaderElector<NamespacedKubernetesC
 			.withRenewDeadline(leaderConfig.getRenewDeadline())
 			.withRetryPeriod(leaderConfig.getRetryPeriod())
 			.withLeaderCallbacks(new LeaderCallbacks(
-				leaderCallbackHandler::internalIsLeader,
-				leaderCallbackHandler::internalNotLeader,
+				leaderCallbackHandler::isLeader,
+				leaderCallbackHandler::notLeader,
 				newLeader -> LOG.info("New leader elected {}.", newLeader)
 			))
 			.build());
-		this.leaderCallbackHandler = leaderCallbackHandler;
 		LOG.info("Create KubernetesLeaderElector {} with lock identity {}.",
 			leaderConfig.getConfigMapName(), LOCK_IDENTITY);
-	}
-
-	public boolean hasLeadership() {
-		return leaderCallbackHandler.hasLeadership();
 	}
 
 	/**
@@ -71,24 +63,8 @@ public class KubernetesLeaderElector extends LeaderElector<NamespacedKubernetesC
 	 */
 	public abstract static class LeaderCallbackHandler {
 
-		private AtomicBoolean hasLeadership = new AtomicBoolean(false);
-
 		public abstract void isLeader();
 
 		public abstract void notLeader();
-
-		private void internalIsLeader() {
-			this.hasLeadership.set(true);
-			isLeader();
-		}
-
-		private void internalNotLeader() {
-			this.hasLeadership.set(false);
-			notLeader();
-		}
-
-		private boolean hasLeadership() {
-			return this.hasLeadership.get();
-		}
 	}
 }

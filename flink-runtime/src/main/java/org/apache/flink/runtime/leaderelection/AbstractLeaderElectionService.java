@@ -27,7 +27,7 @@ import javax.annotation.Nonnull;
 import java.util.UUID;
 
 /**
- * Abstract class for leader election service based on distributed coordination system(e.g. Zookeeper, ETCD, etc.).
+ * Abstract class for leader election service based on distributed coordination system(e.g. Zookeeper, Kubernetes, etc.).
  */
 public abstract class AbstractLeaderElectionService implements LeaderElectionService {
 
@@ -38,7 +38,7 @@ public abstract class AbstractLeaderElectionService implements LeaderElectionSer
 	/** The leader contender which applies for leadership. */
 	protected volatile LeaderContender leaderContender;
 
-	protected volatile UUID issuedLeaderSessionID;
+	private volatile UUID issuedLeaderSessionID;
 
 	protected volatile UUID confirmedLeaderSessionID;
 
@@ -106,7 +106,7 @@ public abstract class AbstractLeaderElectionService implements LeaderElectionSer
 					}
 				} else {
 					logger.debug("Ignoring the leader session Id {} confirmation, since the " +
-						"ZooKeeperLeaderElectionService has already been stopped.", leaderSessionID);
+						"LeaderElectionService has already been stopped.", leaderSessionID);
 				}
 			}
 		} else {

@@ -337,11 +337,6 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 		}
 
 		@Override
-		public boolean hasLeadership() {
-			return leaderController.get();
-		}
-
-		@Override
 		public void run() {
 			// Try acquire, please set the leaderController manually if you want to start/stop leading
 			while (!leaderController.get()) {
