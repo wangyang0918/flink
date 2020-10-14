@@ -210,7 +210,9 @@ public class Fabric8FlinkKubeClient implements FlinkKubeClient {
 	}
 
 	@Override
-	public KubernetesWatch watchPodsAndDoCallback(Map<String, String> labels, PodCallbackHandler podCallbackHandler) {
+	public KubernetesWatch watchPodsAndDoCallback(
+			Map<String, String> labels,
+			WatchCallbackHandler<KubernetesPod> podCallbackHandler) {
 		return new KubernetesWatch(
 			this.internalClient.pods()
 				.withLabels(labels)
