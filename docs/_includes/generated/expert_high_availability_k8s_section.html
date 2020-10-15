@@ -1,0 +1,36 @@
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th class="text-left" style="width: 20%">Key</th>
+            <th class="text-left" style="width: 15%">Default</th>
+            <th class="text-left" style="width: 10%">Type</th>
+            <th class="text-left" style="width: 55%">Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><h5>high-availability.kubernetes.client.lease-duration</h5></td>
+            <td style="word-wrap: break-word;">30 s</td>
+            <td>Duration</td>
+            <td>Define the lease duration for the Kubernetes leader election in ms. The leader will continuously renew its lease time to indicate its existence. And the followers will do a lease checking against the current time. "renewTime + leaseDuration &gt; now" means the leader is alive.</td>
+        </tr>
+        <tr>
+            <td><h5>high-availability.kubernetes.client.renew-deadline</h5></td>
+            <td style="word-wrap: break-word;">15 s</td>
+            <td>Duration</td>
+            <td>Defines the deadline when the leader tries to renew the lease in ms. If it could not succeed in the given time, the renew operation will be aborted.</td>
+        </tr>
+        <tr>
+            <td><h5>high-availability.kubernetes.client.retry-period</h5></td>
+            <td style="word-wrap: break-word;">3 s</td>
+            <td>Duration</td>
+            <td>Defines the pause between consecutive retries in ms. Both the leader and followers use this value for the retry.</td>
+        </tr>
+        <tr>
+            <td><h5>high-availability.kubernetes.leader.suffix</h5></td>
+            <td style="word-wrap: break-word;">"leader"</td>
+            <td>String</td>
+            <td>The ConfigMap suffix of the leader which contains the URL to the leader and the current leader session ID. Leader elector will use the same ConfigMap for contending the lock.</td>
+        </tr>
+    </tbody>
+</table>

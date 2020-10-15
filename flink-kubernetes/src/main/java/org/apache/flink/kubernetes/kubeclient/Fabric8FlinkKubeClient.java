@@ -23,6 +23,7 @@ import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
 import org.apache.flink.kubernetes.kubeclient.decorators.ExternalServiceDecorator;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMapWatcher;
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesLeaderElector;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPodsWatcher;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesService;
@@ -45,6 +46,7 @@ import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.ServicePort;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.NamespacedKubernetesClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -228,6 +230,17 @@ public class Fabric8FlinkKubeClient implements FlinkKubeClient {
 			this.internalClient.pods()
 				.withLabels(labels)
 				.watch(new KubernetesPodsWatcher(podCallbackHandler)));
+	}
+
+	@Override
+	public KubernetesLeaderElector createLeaderElector(
+			KubernetesLeaderElectionConfiguration leaderElectionConfiguration,
+			KubernetesLeaderElector.LeaderCallbackHandler leaderCallbackHandler) {
+		return new KubernetesLeaderElector(
+			(NamespacedKubernetesClient) this.internalClient,
+			namespace,
+			leaderElectionConfiguration,
+			leaderCallbackHandler);
 	}
 
 	@Override
