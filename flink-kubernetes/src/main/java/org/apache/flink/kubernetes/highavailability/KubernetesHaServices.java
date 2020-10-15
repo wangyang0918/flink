@@ -30,10 +30,12 @@ import org.apache.flink.runtime.blob.BlobStoreService;
 import org.apache.flink.runtime.checkpoint.CheckpointRecoveryFactory;
 import org.apache.flink.runtime.checkpoint.StandaloneCheckpointRecoveryFactory;
 import org.apache.flink.runtime.highavailability.HighAvailabilityServices;
+import org.apache.flink.runtime.highavailability.HighAvailabilityServicesUtils;
 import org.apache.flink.runtime.highavailability.RunningJobsRegistry;
-import org.apache.flink.runtime.highavailability.nonha.standalone.StandaloneRunningJobsRegistry;
+import org.apache.flink.runtime.highavailability.helper.RetrievableStateStorageHelper;
+import org.apache.flink.runtime.highavailability.helper.filesystem.FileSystemStateStorageHelper;
+import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobmanager.JobGraphStore;
-import org.apache.flink.runtime.jobmanager.StandaloneJobGraphStore;
 import org.apache.flink.runtime.leaderelection.LeaderElectionService;
 import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalService;
 import org.apache.flink.util.ExceptionUtils;
@@ -61,6 +63,8 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 	private static final String JOB_MANAGER_NAME = "jobmanager";
 
 	private static final String REST_SERVER_NAME = "restserver";
+
+	private static final String SUBMITTED_JOBGRAPH_FILE_PREFIX = "submittedJobGraph";
 
 	private final String leaderSuffix;
 
@@ -95,7 +99,8 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 
 		this.leaderSuffix = config.getString(KubernetesHighAvailabilityOptions.HA_KUBERNETES_LEADER_SUFFIX);
 
-		this.runningJobsRegistry = new StandaloneRunningJobsRegistry();
+		this.runningJobsRegistry = new KubernetesRunningJobsRegistry(
+			kubeClient, getLeaderConfigMapName(DISPATCHER_NAME));
 	}
 
 	@Override
@@ -149,8 +154,15 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 	}
 
 	@Override
-	public JobGraphStore getJobGraphStore() {
-		return new StandaloneJobGraphStore();
+	public JobGraphStore getJobGraphStore() throws Exception {
+		final RetrievableStateStorageHelper<JobGraph> stateStorage =
+			new FileSystemStateStorageHelper<>(HighAvailabilityServicesUtils
+				.getClusterHighAvailableStoragePath(configuration), SUBMITTED_JOBGRAPH_FILE_PREFIX);
+		final String configMapName = getLeaderConfigMapName(DISPATCHER_NAME);
+		return new KubernetesJobGraphStore(
+			kubeClient,
+			configMapName,
+			new KubernetesStateHandleStore<>(kubeClient, configMapName, stateStorage));
 	}
 
 	@Override
