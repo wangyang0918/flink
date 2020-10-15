@@ -18,14 +18,17 @@
 
 package org.apache.flink.kubernetes.kubeclient;
 
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesService;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesWatch;
+import org.apache.flink.util.function.FunctionWithException;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Predicate;
 
 /**
  * The client to talk with kubernetes. The interfaces will be called both in Client and ResourceManager. To avoid
@@ -103,6 +106,67 @@ public interface FlinkKubeClient extends AutoCloseable {
 	KubernetesWatch watchPodsAndDoCallback(
 		Map<String, String> labels,
 		WatchCallbackHandler<KubernetesPod> podCallbackHandler);
+
+	/**
+	 * Create the ConfigMap with specified content. If the ConfigMap already exists, nothing will happen.
+	 *
+	 * @param configMap ConfigMap.
+	 *
+	 * @return Return the ConfigMap create future.
+	 */
+	CompletableFuture<Void> createConfigMap(KubernetesConfigMap configMap);
+
+	/**
+	 * Get the ConfigMap with specified name.
+	 *
+	 * @param name ConfigMap name.
+	 *
+	 * @return Return empty if the ConfigMap does not exist.
+	 */
+	Optional<KubernetesConfigMap> getConfigMap(String name);
+
+	/**
+	 * Update an existing ConfigMap with the data.
+	 *
+	 * @param configMapName ConfigMap to be replaced with. Benefit from <a href=https://kubernetes.io/docs/reference/using-api/api-concepts/#resource-versions>
+	 *                      resource version</a> and combined with {@link #getConfigMap(String)}, we could perform a get-check-and-update
+	 *                      transactional operation. Since concurrent modification could happen on a same ConfigMap,
+	 *                      the update operation may fail. We need to retry internally. The max retry attempts could be
+	 *                      configured via {@link org.apache.flink.kubernetes.configuration.KubernetesConfigOptions#KUBERNETES_MAX_RETRY_ATTEMPTS}.
+	 * @param checker       Only the checker return true, the ConfigMap will be updated.
+	 * @param function      The obtained ConfigMap will be applied to this function and get a new one to replace.
+	 *
+	 * @return Return the ConfigMap update future.
+	 */
+	CompletableFuture<Boolean> checkAndUpdateConfigMap(
+		String configMapName,
+		Predicate<KubernetesConfigMap> checker,
+		FunctionWithException<KubernetesConfigMap, KubernetesConfigMap, ?> function);
+
+	/**
+	 * Watch the ConfigMaps with specified name and do the {@link WatchCallbackHandler}.
+	 *
+	 * @param name name to filter the ConfigMaps to watch
+	 * @param callbackHandler callbackHandler which reacts to ConfigMap events
+	 * @return Return a watch for ConfigMaps. It needs to be closed after use.
+	 */
+	KubernetesWatch watchConfigMapsAndDoCallback(
+		String name,
+		WatchCallbackHandler<KubernetesConfigMap> callbackHandler);
+
+	/**
+	 * Delete the Kubernetes ConfigMaps by labels. This will be used by {@link org.apache.flink.kubernetes.highavailability.KubernetesHaServices}
+	 * to clean up all data.
+	 * @param labels labels to filter the resources. e.g. type: high-availability
+	 */
+	void deleteConfigMapsByLabels(Map<String, String> labels);
+
+	/**
+	 * Delete a Kubernetes ConfigMap by name.
+	 *
+	 * @param configMapName ConfigMap name
+	 */
+	void deleteConfigMap(String configMapName);
 
 	/**
 	 * Callback handler for kubernetes resources.

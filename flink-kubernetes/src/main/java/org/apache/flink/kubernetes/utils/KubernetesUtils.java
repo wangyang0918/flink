@@ -24,6 +24,7 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.CoreOptions;
 import org.apache.flink.configuration.PipelineOptions;
 import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
 import org.apache.flink.runtime.clusterframework.BootstrapTools;
 import org.apache.flink.util.FlinkRuntimeException;
 import org.apache.flink.util.function.FunctionUtils;
@@ -42,10 +43,13 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import static org.apache.flink.kubernetes.utils.Constants.CONFIG_FILE_LOG4J_NAME;
 import static org.apache.flink.kubernetes.utils.Constants.CONFIG_FILE_LOGBACK_NAME;
+import static org.apache.flink.kubernetes.utils.Constants.LEADER_ANNOTATION_KEY;
+import static org.apache.flink.kubernetes.utils.Constants.LOCK_IDENTITY;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /**
@@ -106,10 +110,34 @@ public class KubernetesUtils {
 	 * @return Task manager labels.
 	 */
 	public static Map<String, String> getTaskManagerLabels(String clusterId) {
-		final Map<String, String> labels = new HashMap<>();
-		labels.put(Constants.LABEL_TYPE_KEY, Constants.LABEL_TYPE_NATIVE_TYPE);
-		labels.put(Constants.LABEL_APP_KEY, clusterId);
+		final Map<String, String> labels = new HashMap<>(getCommonLabels(clusterId));
 		labels.put(Constants.LABEL_COMPONENT_KEY, Constants.LABEL_COMPONENT_TASK_MANAGER);
+		return Collections.unmodifiableMap(labels);
+	}
+
+	/**
+	 * Get the common labels for Flink native clusters. All the Kubernetes resources will be set with these labels.
+	 *
+	 * @param clusterId cluster id
+	 * @return Return common labels map
+	 */
+	public static Map<String, String> getCommonLabels(String clusterId) {
+		Map<String, String> commonLabels = new HashMap<>();
+		commonLabels.put(Constants.LABEL_TYPE_KEY, Constants.LABEL_TYPE_NATIVE_TYPE);
+		commonLabels.put(Constants.LABEL_APP_KEY, clusterId);
+
+		return Collections.unmodifiableMap(commonLabels);
+	}
+
+	/**
+	 * Get ConfigMap labels for the current Flink cluster. They could be used to filter and clean-up the resources.
+	 *
+	 * @param clusterId cluster id
+	 * @return Return ConfigMap labels.
+	 */
+	public static Map<String, String> getConfigMapLabels(String clusterId, String type) {
+		final Map<String, String> labels = new HashMap<>(getCommonLabels(clusterId));
+		labels.put(Constants.LABEL_CONFIGMAP_TYPE_KEY, type);
 		return Collections.unmodifiableMap(labels);
 	}
 
@@ -194,6 +222,16 @@ public class KubernetesUtils {
 							" An example of such path is: local:///opt/flink/examples/streaming/WindowJoin.jar");
 				})
 		).collect(Collectors.toList());
+	}
+
+	public static Predicate<KubernetesConfigMap> getLeaderChecker() {
+		return configMap -> {
+			if (configMap.getAnnotations() != null) {
+				final String leader = configMap.getAnnotations().get(LEADER_ANNOTATION_KEY);
+				return leader != null && leader.contains(LOCK_IDENTITY);
+			}
+			return false;
+		};
 	}
 
 	private static String getJavaOpts(Configuration flinkConfig, ConfigOption<String> configOption) {

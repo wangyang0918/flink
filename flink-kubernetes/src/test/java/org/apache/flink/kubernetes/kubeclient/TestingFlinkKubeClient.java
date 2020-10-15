@@ -18,13 +18,18 @@
 
 package org.apache.flink.kubernetes.kubeclient;
 
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesService;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesWatch;
 import org.apache.flink.runtime.concurrent.FutureUtils;
+import org.apache.flink.util.FlinkRuntimeException;
 import org.apache.flink.util.Preconditions;
+import org.apache.flink.util.function.FunctionUtils;
+import org.apache.flink.util.function.FunctionWithException;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -32,6 +37,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
+
+import static org.apache.flink.kubernetes.utils.Constants.LEADER_ANNOTATION_KEY;
+import static org.apache.flink.kubernetes.utils.Constants.LOCK_IDENTITY;
 
 /**
  * Testing implementation of {@link FlinkKubeClient}.
@@ -43,19 +52,28 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 	private final Consumer<String> stopAndCleanupClusterConsumer;
 	private final Function<Map<String, String>, List<KubernetesPod>> getPodsWithLabelsFunction;
 	private final BiFunction<Map<String, String>, WatchCallbackHandler<KubernetesPod>, KubernetesWatch> watchPodsAndDoCallbackFunction;
+	private final BiFunction<String, WatchCallbackHandler<KubernetesConfigMap>, KubernetesWatch> watchConfigMapsAndDoCallbackFunction;
+	private final Map<String, KubernetesConfigMap> configMapStore;
+	private final Consumer<Map<String, String>> deleteConfigMapsConsumer;
 
 	private TestingFlinkKubeClient(
 			Function<KubernetesPod, CompletableFuture<Void>> createTaskManagerPodFunction,
 			Function<String, CompletableFuture<Void>> stopPodFunction,
 			Consumer<String> stopAndCleanupClusterConsumer,
 			Function<Map<String, String>, List<KubernetesPod>> getPodsWithLabelsFunction,
-			BiFunction<Map<String, String>, WatchCallbackHandler<KubernetesPod>, KubernetesWatch> watchPodsAndDoCallbackFunction) {
+			BiFunction<Map<String, String>, WatchCallbackHandler<KubernetesPod>, KubernetesWatch> watchPodsAndDoCallbackFunction,
+			BiFunction<String, WatchCallbackHandler<KubernetesConfigMap>, KubernetesWatch> watchConfigMapsAndDoCallbackFunction,
+			Map<String, KubernetesConfigMap> configMapStore,
+			Consumer<Map<String, String>> deleteConfigMapsConsumer) {
 
 		this.createTaskManagerPodFunction = createTaskManagerPodFunction;
 		this.stopPodFunction = stopPodFunction;
 		this.stopAndCleanupClusterConsumer = stopAndCleanupClusterConsumer;
 		this.getPodsWithLabelsFunction = getPodsWithLabelsFunction;
 		this.watchPodsAndDoCallbackFunction = watchPodsAndDoCallbackFunction;
+		this.watchConfigMapsAndDoCallbackFunction = watchConfigMapsAndDoCallbackFunction;
+		this.configMapStore = configMapStore;
+		this.deleteConfigMapsConsumer = deleteConfigMapsConsumer;
 	}
 
 	@Override
@@ -104,6 +122,52 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 	}
 
 	@Override
+	public CompletableFuture<Void> createConfigMap(KubernetesConfigMap configMap) {
+		configMapStore.putIfAbsent(configMap.getName(), configMap);
+		return CompletableFuture.completedFuture(null);
+	}
+
+	@Override
+	public Optional<KubernetesConfigMap> getConfigMap(String name) {
+		final KubernetesConfigMap configMap = configMapStore.get(name);
+		if (configMap == null) {
+			return Optional.empty();
+		}
+		return Optional.of(new MockKubernetesConfigMap(configMap.getName(), new HashMap<>(configMap.getData())));
+	}
+
+	@Override
+	public CompletableFuture<Boolean> checkAndUpdateConfigMap(
+			String configMapName,
+			Predicate<KubernetesConfigMap> checker,
+			FunctionWithException<KubernetesConfigMap, KubernetesConfigMap, ?> function) {
+		return getConfigMap(configMapName).map(FunctionUtils.uncheckedFunction(
+			configMap -> {
+				final boolean shouldUpdate = checker.test(configMap);
+				if (shouldUpdate) {
+					configMapStore.put(configMap.getName(), function.apply(configMap));
+				}
+				return CompletableFuture.completedFuture(shouldUpdate);
+			}))
+			.orElseThrow(() -> new FlinkRuntimeException("ConfigMap " + configMapName + " not exists."));
+	}
+
+	@Override
+	public KubernetesWatch watchConfigMapsAndDoCallback(String name, WatchCallbackHandler<KubernetesConfigMap> callbackHandler) {
+		return watchConfigMapsAndDoCallbackFunction.apply(name, callbackHandler);
+	}
+
+	@Override
+	public void deleteConfigMapsByLabels(Map<String, String> labels) {
+		deleteConfigMapsConsumer.accept(labels);
+	}
+
+	@Override
+	public void deleteConfigMap(String configMapName) {
+		configMapStore.remove(configMapName);
+	}
+
+	@Override
 	public void close() throws Exception {
 		// noop
 	}
@@ -126,6 +190,10 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 				(ignore) -> Collections.emptyList();
 		private BiFunction<Map<String, String>, WatchCallbackHandler<KubernetesPod>, KubernetesWatch> watchPodsAndDoCallbackFunction =
 				(ignore1, ignore2) -> new MockKubernetesWatch();
+		private BiFunction<String, WatchCallbackHandler<KubernetesConfigMap>, KubernetesWatch> watchConfigMapsAndDoCallbackFunction =
+			(ignore1, ignore2) -> new MockKubernetesWatch();
+		private Map<String, KubernetesConfigMap> configMapStore = new HashMap<>();
+		private Consumer<Map<String, String>> deleteConfigMapsConsumer;
 
 		private Builder() {}
 
@@ -154,13 +222,31 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 			return this;
 		}
 
+		public Builder setWatchConfigMapsAndDoCallbackFunction(BiFunction<String, WatchCallbackHandler<KubernetesConfigMap>, KubernetesWatch> watchConfigMapsAndDoCallbackFunction) {
+			this.watchConfigMapsAndDoCallbackFunction = Preconditions.checkNotNull(watchConfigMapsAndDoCallbackFunction);
+			return this;
+		}
+
+		public Builder setConfigMapStore(Map<String, KubernetesConfigMap> configMapStore) {
+			this.configMapStore = configMapStore;
+			return this;
+		}
+
+		public Builder setDeleteConfigMapsConsumer(Consumer<Map<String, String>> consumer) {
+			this.deleteConfigMapsConsumer = consumer;
+			return this;
+		}
+
 		public TestingFlinkKubeClient build() {
 			return new TestingFlinkKubeClient(
 					createTaskManagerPodFunction,
 					stopPodFunction,
 					stopAndCleanupClusterConsumer,
 					getPodsWithLabelsFunction,
-					watchPodsAndDoCallbackFunction);
+					watchPodsAndDoCallbackFunction,
+					watchConfigMapsAndDoCallbackFunction,
+					configMapStore,
+					deleteConfigMapsConsumer);
 		}
 	}
 
@@ -175,6 +261,43 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 		@Override
 		public void close() {
 			// noop
+		}
+	}
+
+	/**
+	 * Testing implementation of {@link KubernetesConfigMap}.
+	 */
+	private class MockKubernetesConfigMap extends KubernetesConfigMap {
+		private final String name;
+		private final Map<String, String> data;
+		private final Map<String, String> labels;
+		MockKubernetesConfigMap(String name, Map<String, String> data) {
+			super(null);
+			this.name = name;
+			this.data = data;
+			this.labels = new HashMap<>();
+		}
+
+		@Override
+		public String getName() {
+			return this.name;
+		}
+
+		@Override
+		public Map<String, String> getData() {
+			return this.data;
+		}
+
+		@Override
+		public Map<String, String> getAnnotations() {
+			final Map<String, String> annotations = new HashMap<>();
+			annotations.put(LEADER_ANNOTATION_KEY, LOCK_IDENTITY);
+			return annotations;
+		}
+
+		@Override
+		public Map<String, String> getLabels() {
+			return this.labels;
 		}
 	}
 }

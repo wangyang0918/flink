@@ -21,14 +21,21 @@ package org.apache.flink.kubernetes.kubeclient;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
 import org.apache.flink.kubernetes.kubeclient.decorators.ExternalServiceDecorator;
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMapWatcher;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPodsWatcher;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesService;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesWatch;
 import org.apache.flink.kubernetes.utils.Constants;
 import org.apache.flink.kubernetes.utils.KubernetesUtils;
+import org.apache.flink.runtime.concurrent.FutureUtils;
 import org.apache.flink.util.ExecutorUtils;
+import org.apache.flink.util.FlinkRuntimeException;
+import org.apache.flink.util.function.FunctionUtils;
+import org.apache.flink.util.function.FunctionWithException;
 
+import io.fabric8.kubernetes.api.model.ConfigMap;
 import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.LoadBalancerStatus;
 import io.fabric8.kubernetes.api.model.OwnerReference;
@@ -49,6 +56,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -64,6 +72,7 @@ public class Fabric8FlinkKubeClient implements FlinkKubeClient {
 	private final KubernetesClient internalClient;
 	private final String clusterId;
 	private final String namespace;
+	private final int maxRetryAttempts;
 
 	private final ExecutorService kubeClientExecutorService;
 
@@ -75,6 +84,8 @@ public class Fabric8FlinkKubeClient implements FlinkKubeClient {
 		this.clusterId = checkNotNull(flinkConfig.getString(KubernetesConfigOptions.CLUSTER_ID));
 
 		this.namespace = flinkConfig.getString(KubernetesConfigOptions.NAMESPACE);
+
+		this.maxRetryAttempts = flinkConfig.getInteger(KubernetesConfigOptions.KUBERNETES_MAX_RETRY_ATTEMPTS);
 
 		this.kubeClientExecutorService = asyncExecutorFactory.get();
 	}
@@ -217,6 +228,68 @@ public class Fabric8FlinkKubeClient implements FlinkKubeClient {
 			this.internalClient.pods()
 				.withLabels(labels)
 				.watch(new KubernetesPodsWatcher(podCallbackHandler)));
+	}
+
+	@Override
+	public CompletableFuture<Void> createConfigMap(KubernetesConfigMap configMap) {
+		return CompletableFuture.runAsync(
+			() -> {
+				if (!getConfigMap(configMap.getName()).isPresent()) {
+					this.internalClient.configMaps().create(configMap.getInternalResource());
+				}
+			},
+			kubeClientExecutorService);
+	}
+
+	@Override
+	public Optional<KubernetesConfigMap> getConfigMap(String name) {
+		final ConfigMap configMap = this.internalClient.configMaps().inNamespace(namespace).withName(name).get();
+		return configMap == null ? Optional.empty() : Optional.of(new KubernetesConfigMap(configMap));
+	}
+
+	@Override
+	public CompletableFuture<Boolean> checkAndUpdateConfigMap(
+			String configMapName,
+			Predicate<KubernetesConfigMap> checker,
+			FunctionWithException<KubernetesConfigMap, KubernetesConfigMap, ?> function) {
+		return FutureUtils.retry(
+			() -> CompletableFuture.supplyAsync(
+				() -> getConfigMap(configMapName)
+					.map(FunctionUtils.uncheckedFunction(configMap -> {
+						final boolean shouldUpdate = checker.test(configMap);
+						if (!shouldUpdate) {
+							LOG.warn("Trying to update ConfigMap {} to {} without checking pass, ignoring.",
+								configMap.getName(), configMap.getData());
+						} else {
+							this.internalClient.configMaps()
+								.inNamespace(namespace)
+								.createOrReplace(function.apply(configMap).getInternalResource());
+						}
+						return shouldUpdate;
+					}))
+					.orElseThrow(
+						() -> new FlinkRuntimeException("ConfigMap " + configMapName + " not exists.")),
+				kubeClientExecutorService),
+			maxRetryAttempts,
+			kubeClientExecutorService);
+	}
+
+	@Override
+	public KubernetesWatch watchConfigMapsAndDoCallback(
+			String name,
+			WatchCallbackHandler<KubernetesConfigMap> callbackHandler) {
+		return new KubernetesWatch(
+			this.internalClient.configMaps().withName(name).watch(new KubernetesConfigMapWatcher(callbackHandler)));
+	}
+
+	@Override
+	public void deleteConfigMapsByLabels(Map<String, String> labels) {
+		this.internalClient.configMaps().withLabels(labels).delete();
+	}
+
+	@Override
+	public void deleteConfigMap(String configMapName) {
+		this.internalClient.configMaps().withName(configMapName).delete();
 	}
 
 	@Override

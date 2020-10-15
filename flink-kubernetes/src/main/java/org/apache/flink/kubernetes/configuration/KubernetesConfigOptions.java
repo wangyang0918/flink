@@ -258,6 +258,13 @@ public class KubernetesConfigOptions {
 			.withDescription("If configured, Flink will add \"resources.limits.<config-key>\" and \"resources.requests.<config-key>\" " +
 				"to the main container of TaskExecutor and set the value to the value of " + ExternalResourceOptions.EXTERNAL_RESOURCE_AMOUNT.key() + ".");
 
+	public static final ConfigOption<Integer> KUBERNETES_MAX_RETRY_ATTEMPTS =
+		key("kubernetes.client.max-retry-attempts")
+			.intType()
+			.defaultValue(5)
+			.withDescription("Defines the number of Kubernetes resources update operation retries before the client " +
+				"gives up. For example, updating the ConfigMap.");
+
 	private static String getDefaultFlinkImage() {
 		// The default container image that ties to the exact needed versions of both Flink and Scala.
 		boolean snapshot = EnvironmentInformation.getVersion().toLowerCase(Locale.ENGLISH).contains("snapshot");
