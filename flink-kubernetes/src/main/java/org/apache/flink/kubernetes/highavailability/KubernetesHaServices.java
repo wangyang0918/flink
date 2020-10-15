@@ -28,7 +28,6 @@ import org.apache.flink.kubernetes.utils.KubernetesUtils;
 import org.apache.flink.runtime.blob.BlobStore;
 import org.apache.flink.runtime.blob.BlobStoreService;
 import org.apache.flink.runtime.checkpoint.CheckpointRecoveryFactory;
-import org.apache.flink.runtime.checkpoint.StandaloneCheckpointRecoveryFactory;
 import org.apache.flink.runtime.highavailability.HighAvailabilityServices;
 import org.apache.flink.runtime.highavailability.HighAvailabilityServicesUtils;
 import org.apache.flink.runtime.highavailability.RunningJobsRegistry;
@@ -150,7 +149,7 @@ public class KubernetesHaServices implements HighAvailabilityServices {
 
 	@Override
 	public CheckpointRecoveryFactory getCheckpointRecoveryFactory() {
-		return new StandaloneCheckpointRecoveryFactory();
+		return new KubernetesCheckpointRecoveryFactory(kubeClient, configuration, executor);
 	}
 
 	@Override
