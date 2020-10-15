@@ -16,9 +16,10 @@
  * limitations under the License.
  */
 
-package org.apache.flink.runtime.zookeeper;
+package org.apache.flink.runtime.highavailability.helper;
 
 import org.apache.flink.runtime.state.RetrievableStateHandle;
+import org.apache.flink.runtime.zookeeper.ZooKeeperStateHandleStore;
 
 import java.io.Serializable;
 

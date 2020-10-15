@@ -16,14 +16,14 @@
  * limitations under the License.
  */
 
-package org.apache.flink.runtime.zookeeper.filesystem;
+package org.apache.flink.runtime.highavailability.helper.filesystem;
 
 import org.apache.flink.core.fs.FSDataOutputStream;
 import org.apache.flink.core.fs.FileSystem;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.runtime.state.RetrievableStateHandle;
 import org.apache.flink.runtime.state.RetrievableStreamStateHandle;
-import org.apache.flink.runtime.zookeeper.RetrievableStateStorageHelper;
+import org.apache.flink.runtime.highavailability.helper.RetrievableStateStorageHelper;
 import org.apache.flink.util.FileUtils;
 import org.apache.flink.util.InstantiationUtil;
 import org.apache.flink.util.Preconditions;
