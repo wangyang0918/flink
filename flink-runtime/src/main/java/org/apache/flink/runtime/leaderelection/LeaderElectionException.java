@@ -18,29 +18,25 @@
 
 package org.apache.flink.runtime.leaderelection;
 
-import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalListener;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.UUID;
+import org.apache.flink.util.FlinkException;
 
 /**
- * Test {@link LeaderRetrievalListener} implementation which offers some convenience functions for
- * testing purposes.
+ * This exception is thrown by the {@link LeaderElectionDriver} when {@link LeaderElectionDriver#writeLeaderInformation}
+ * failed or some unexpected changes to the leader storage.
  */
-public class TestingListener extends TestingRetrievalBase implements LeaderRetrievalListener {
+public class LeaderElectionException extends FlinkException {
 
-	private static final Logger LOG = LoggerFactory.getLogger(TestingListener.class);
+	private static final long serialVersionUID = 1L;
 
-	@Override
-	public void notifyLeaderAddress(String leaderAddress, UUID leaderSessionID) {
-		LOG.debug("Notified about new leader address {} with session ID {}.", leaderAddress, leaderSessionID);
-		offerToLeaderQueue(LeaderInformation.known(leaderSessionID, leaderAddress));
+	public LeaderElectionException(String message) {
+		super(message);
 	}
 
-	@Override
-	public void handleError(Exception exception) {
-		super.handleError(exception);
+	public LeaderElectionException(Throwable cause) {
+		super(cause);
+	}
+
+	public LeaderElectionException(String message, Throwable cause) {
+		super(message, cause);
 	}
 }

@@ -93,9 +93,8 @@ public class LeaderElectionTest extends TestLogger {
 		final ManualLeaderContender manualLeaderContender = new ManualLeaderContender();
 
 		try {
-			assertThat(leaderElectionService.hasLeadership(UUID.randomUUID()), is(false));
-
 			leaderElectionService.start(manualLeaderContender);
+			assertThat(leaderElectionService.hasLeadership(UUID.randomUUID()), is(false));
 
 			final UUID leaderSessionId = manualLeaderContender.waitForLeaderSessionId();
 

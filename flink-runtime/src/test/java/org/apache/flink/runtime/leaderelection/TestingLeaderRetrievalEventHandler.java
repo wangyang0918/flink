@@ -18,29 +18,16 @@
 
 package org.apache.flink.runtime.leaderelection;
 
-import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalListener;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.UUID;
+import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalEventHandler;
 
 /**
- * Test {@link LeaderRetrievalListener} implementation which offers some convenience functions for
+ * Test {@link LeaderRetrievalEventHandler} implementation which offers some convenience functions for
  * testing purposes.
  */
-public class TestingListener extends TestingRetrievalBase implements LeaderRetrievalListener {
-
-	private static final Logger LOG = LoggerFactory.getLogger(TestingListener.class);
+public class TestingLeaderRetrievalEventHandler extends TestingRetrievalBase implements LeaderRetrievalEventHandler {
 
 	@Override
-	public void notifyLeaderAddress(String leaderAddress, UUID leaderSessionID) {
-		LOG.debug("Notified about new leader address {} with session ID {}.", leaderAddress, leaderSessionID);
-		offerToLeaderQueue(LeaderInformation.known(leaderSessionID, leaderAddress));
-	}
-
-	@Override
-	public void handleError(Exception exception) {
-		super.handleError(exception);
+	public void notifyLeaderAddress(LeaderInformation leaderInformation) {
+		offerToLeaderQueue(leaderInformation);
 	}
 }
