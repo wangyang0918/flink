@@ -24,6 +24,7 @@ import org.apache.flink.runtime.messages.Acknowledge;
 import org.apache.flink.runtime.testingUtils.TestingUtils;
 import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.FlinkException;
+import org.apache.flink.util.FlinkRuntimeException;
 import org.apache.flink.util.TestLogger;
 
 import org.junit.Assert;
@@ -158,6 +159,39 @@ public class FutureUtilsTest extends TestLogger {
 		if (atomicThrowable.get() != null) {
 			throw new FlinkException("Exception occurred in the retry operation.", atomicThrowable.get());
 		}
+	}
+
+	/**
+	 * Test that {@link FutureUtils#retry} should stop at non-retryable exception.
+	 */
+	@Test
+	public void testStopAtNonRetryableException() {
+		final int retries = 10;
+		final int notRetry = 3;
+		final AtomicInteger atomicInteger = new AtomicInteger(0);
+		final String notRetryExceptionMsg = "Non-retryable exception";
+		CompletableFuture<Boolean> retryFuture = FutureUtils.retry(
+			() -> CompletableFuture.supplyAsync(
+				() -> {
+					if (atomicInteger.incrementAndGet() == notRetry) {
+						// throw non-retryable exception
+						throw new CompletionException(new FlinkRuntimeException(notRetryExceptionMsg));
+					} else {
+						throw new CompletionException(new FlinkException("Test exception"));
+					}
+				},
+				TestingUtils.defaultExecutor()),
+			retries,
+			throwable -> ExceptionUtils.findThrowable(throwable, FlinkException.class).isPresent(),
+			TestingUtils.defaultExecutor());
+
+		try {
+			retryFuture.get();
+			fail("Exception should be thrown.");
+		} catch (Exception ex) {
+			assertThat(ExceptionUtils.findThrowableWithMessage(ex, notRetryExceptionMsg).isPresent(), is(true));
+		}
+		assertThat(atomicInteger.get(), is(notRetry));
 	}
 
 	/**
