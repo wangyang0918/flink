@@ -28,3 +28,4 @@ cd $END_TO_END_DIR/../flink-kubernetes
 
 # Run the ITCases
 run_mvn test -Dtest=org.apache.flink.kubernetes.itcases.Fabric8FlinkKubeClientITCase
+run_mvn test -Dtest=org.apache.flink.kubernetes.itcases.KubernetesLeaderElectionITCase

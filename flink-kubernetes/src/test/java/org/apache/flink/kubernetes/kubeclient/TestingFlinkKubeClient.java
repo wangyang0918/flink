@@ -18,7 +18,9 @@
 
 package org.apache.flink.kubernetes.kubeclient;
 
+import org.apache.flink.kubernetes.configuration.KubernetesLeaderElectionConfiguration;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesLeaderElector;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesService;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesWatch;
@@ -35,6 +37,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+
+import static org.apache.flink.kubernetes.highavailability.KubernetesHighAvailabilityTestBase.LOCK_IDENTITY;
 
 /**
  * Testing implementation of {@link FlinkKubeClient}.
@@ -130,6 +134,11 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 	@Override
 	public KubernetesWatch watchPodsAndDoCallback(Map<String, String> labels, WatchCallbackHandler<KubernetesPod> podCallbackHandler) {
 		return watchPodsAndDoCallbackFunction.apply(labels, podCallbackHandler);
+	}
+
+	@Override
+	public KubernetesLeaderElector createLeaderElector(KubernetesLeaderElectionConfiguration leaderElectionConfiguration, KubernetesLeaderElector.LeaderCallbackHandler leaderCallbackHandler) {
+		return new MockKubernetesLeaderElector(leaderElectionConfiguration, leaderCallbackHandler, leaderController);
 	}
 
 	@Override
@@ -345,6 +354,60 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 		@Override
 		public Map<String, String> getLabels() {
 			return this.labels;
+		}
+	}
+
+	/**
+	 * Testing implementation of {@link KubernetesLeaderElector}.
+	 */
+	private class MockKubernetesLeaderElector extends KubernetesLeaderElector {
+		private final AtomicBoolean leaderController;
+		private final KubernetesLeaderElectionConfiguration leaderConfig;
+		private final LeaderCallbackHandler leaderCallbackHandler;
+		private static final String NAMESPACE = "test";
+
+		MockKubernetesLeaderElector(
+				KubernetesLeaderElectionConfiguration leaderConfig,
+				LeaderCallbackHandler leaderCallbackHandler,
+				AtomicBoolean leaderController) {
+			super(null, NAMESPACE, leaderConfig, leaderCallbackHandler);
+			this.leaderConfig = leaderConfig;
+			this.leaderCallbackHandler = leaderCallbackHandler;
+			this.leaderController = leaderController;
+		}
+
+		@Override
+		public void run() {
+			// Try acquire, please set the leaderController manually if you want to start/stop leading
+			while (!leaderController.get()) {
+				try {
+					Thread.sleep(leaderConfig.getRetryPeriod().toMillis());
+				} catch (InterruptedException e) {
+					return;
+				}
+			}
+
+			// Create the ConfigMap with annotations
+			final Map<String, String> annotations = new HashMap<>();
+			annotations.put(LEADER_ANNOTATION_KEY, LOCK_IDENTITY);
+			final KubernetesConfigMap configMap =
+				new MockKubernetesConfigMap(leaderConfig.getConfigMapName());
+			configMap.getAnnotations().putAll(annotations);
+			createConfigMap(configMap);
+
+			leaderCallbackHandler.isLeader();
+
+			// Try to keep the leader position
+			while (leaderController.get()) {
+				try {
+					Thread.sleep(leaderConfig.getRetryPeriod().toMillis());
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					break;
+				}
+			}
+
+			leaderCallbackHandler.notLeader();
 		}
 	}
 }
