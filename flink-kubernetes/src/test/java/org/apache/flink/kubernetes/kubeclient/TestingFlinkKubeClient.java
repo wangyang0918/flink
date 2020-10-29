@@ -33,12 +33,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
-
-import static org.apache.flink.kubernetes.highavailability.KubernetesHighAvailabilityTestBase.LOCK_IDENTITY;
 
 /**
  * Testing implementation of {@link FlinkKubeClient}.
@@ -57,7 +54,7 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 	private final Function<Map<String, String>, CompletableFuture<Void>> deleteConfigMapByLabelFunction;
 	private final Function<String, CompletableFuture<Void>> deleteConfigMapFunction;
 	private final Consumer<Void> closeConsumer;
-	private final AtomicBoolean leaderController;
+	private final BiFunction<KubernetesLeaderElectionConfiguration, KubernetesLeaderElector.LeaderCallbackHandler, KubernetesLeaderElector> createLeaderElectorFunction;
 
 	private TestingFlinkKubeClient(
 			Function<KubernetesPod, CompletableFuture<Void>> createTaskManagerPodFunction,
@@ -72,7 +69,7 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 			Function<Map<String, String>, CompletableFuture<Void>> deleteConfigMapByLabelFunction,
 			Function<String, CompletableFuture<Void>> deleteConfigMapFunction,
 			Consumer<Void> closeConsumer,
-			AtomicBoolean leaderController) {
+			BiFunction<KubernetesLeaderElectionConfiguration, KubernetesLeaderElector.LeaderCallbackHandler, KubernetesLeaderElector> createLeaderElectorFunction) {
 
 		this.createTaskManagerPodFunction = createTaskManagerPodFunction;
 		this.stopPodFunction = stopPodFunction;
@@ -88,7 +85,8 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 		this.deleteConfigMapFunction = deleteConfigMapFunction;
 
 		this.closeConsumer = closeConsumer;
-		this.leaderController = leaderController;
+
+		this.createLeaderElectorFunction = createLeaderElectorFunction;
 	}
 
 	@Override
@@ -137,8 +135,8 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 	}
 
 	@Override
-	public KubernetesLeaderElector createLeaderElector(KubernetesLeaderElectionConfiguration leaderElectionConfiguration, KubernetesLeaderElector.LeaderCallbackHandler leaderCallbackHandler) {
-		return new MockKubernetesLeaderElector(leaderElectionConfiguration, leaderCallbackHandler, leaderController);
+	public KubernetesLeaderElector createLeaderElector(KubernetesLeaderElectionConfiguration leaderConfig, KubernetesLeaderElector.LeaderCallbackHandler callbackHandler) {
+		return createLeaderElectorFunction.apply(leaderConfig, callbackHandler);
 	}
 
 	@Override
@@ -211,7 +209,8 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 
 		private Consumer<Void> closeConsumer = (ignore) -> {};
 
-		private AtomicBoolean leaderController = new AtomicBoolean(false);
+		private BiFunction<KubernetesLeaderElectionConfiguration, KubernetesLeaderElector.LeaderCallbackHandler, KubernetesLeaderElector> createLeaderElectorFunction =
+			TestingKubernetesLeaderElector::new;
 
 		private Builder() {}
 
@@ -252,8 +251,7 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 		}
 
 		public Builder setCheckAndUpdateConfigMapFunction(
-				BiFunction<String, Function<KubernetesConfigMap, Optional<KubernetesConfigMap>>,
-				CompletableFuture<Boolean>> checkAndUpdateConfigMapFunction) {
+				BiFunction<String, Function<KubernetesConfigMap, Optional<KubernetesConfigMap>>, CompletableFuture<Boolean>> checkAndUpdateConfigMapFunction) {
 			this.checkAndUpdateConfigMapFunction = checkAndUpdateConfigMapFunction;
 			return this;
 		}
@@ -282,8 +280,8 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 			return this;
 		}
 
-		public Builder setLeaderController(AtomicBoolean leaderController) {
-			this.leaderController = leaderController;
+		public Builder setCreateLeaderElectorFunction(BiFunction<KubernetesLeaderElectionConfiguration, KubernetesLeaderElector.LeaderCallbackHandler, KubernetesLeaderElector> createLeaderElectorFunction) {
+			this.createLeaderElectorFunction = createLeaderElectorFunction;
 			return this;
 		}
 
@@ -301,7 +299,7 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 					deleteConfigMapByLabelFunction,
 					deleteConfigMapFunction,
 					closeConsumer,
-					leaderController);
+					createLeaderElectorFunction);
 		}
 	}
 
@@ -360,54 +358,18 @@ public class TestingFlinkKubeClient implements FlinkKubeClient {
 	/**
 	 * Testing implementation of {@link KubernetesLeaderElector}.
 	 */
-	private class MockKubernetesLeaderElector extends KubernetesLeaderElector {
-		private final AtomicBoolean leaderController;
-		private final KubernetesLeaderElectionConfiguration leaderConfig;
-		private final LeaderCallbackHandler leaderCallbackHandler;
+	public static class TestingKubernetesLeaderElector extends KubernetesLeaderElector {
 		private static final String NAMESPACE = "test";
 
-		MockKubernetesLeaderElector(
+		public TestingKubernetesLeaderElector(
 				KubernetesLeaderElectionConfiguration leaderConfig,
-				LeaderCallbackHandler leaderCallbackHandler,
-				AtomicBoolean leaderController) {
+				LeaderCallbackHandler leaderCallbackHandler) {
 			super(null, NAMESPACE, leaderConfig, leaderCallbackHandler);
-			this.leaderConfig = leaderConfig;
-			this.leaderCallbackHandler = leaderCallbackHandler;
-			this.leaderController = leaderController;
 		}
 
 		@Override
 		public void run() {
-			// Try acquire, please set the leaderController manually if you want to start/stop leading
-			while (!leaderController.get()) {
-				try {
-					Thread.sleep(leaderConfig.getRetryPeriod().toMillis());
-				} catch (InterruptedException e) {
-					return;
-				}
-			}
-
-			// Create the ConfigMap with annotations
-			final Map<String, String> annotations = new HashMap<>();
-			annotations.put(LEADER_ANNOTATION_KEY, LOCK_IDENTITY);
-			final KubernetesConfigMap configMap =
-				new MockKubernetesConfigMap(leaderConfig.getConfigMapName());
-			configMap.getAnnotations().putAll(annotations);
-			createConfigMap(configMap);
-
-			leaderCallbackHandler.isLeader();
-
-			// Try to keep the leader position
-			while (leaderController.get()) {
-				try {
-					Thread.sleep(leaderConfig.getRetryPeriod().toMillis());
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-					break;
-				}
-			}
-
-			leaderCallbackHandler.notLeader();
+			// noop
 		}
 	}
 }

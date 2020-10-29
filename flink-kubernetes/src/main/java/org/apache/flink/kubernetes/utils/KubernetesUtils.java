@@ -134,6 +134,8 @@ public class KubernetesUtils {
 	 * Get ConfigMap labels for the current Flink cluster. They could be used to filter and clean-up the resources.
 	 *
 	 * @param clusterId cluster id
+	 * @param type the config map use case. It could only be {@link Constants#LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY}
+	 * now.
 	 * @return Return ConfigMap labels.
 	 */
 	public static Map<String, String> getConfigMapLabels(String clusterId, String type) {

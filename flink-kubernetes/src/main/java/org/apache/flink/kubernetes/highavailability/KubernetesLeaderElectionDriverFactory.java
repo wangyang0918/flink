@@ -25,23 +25,18 @@ import org.apache.flink.runtime.leaderelection.LeaderElectionDriverFactory;
 import org.apache.flink.runtime.leaderelection.LeaderElectionEventHandler;
 import org.apache.flink.runtime.rpc.FatalErrorHandler;
 
-import java.util.concurrent.Executor;
-
 /**
  * {@link LeaderElectionDriverFactory} implementation for Kubernetes.
  */
 public class KubernetesLeaderElectionDriverFactory implements LeaderElectionDriverFactory {
 
 	private final FlinkKubeClient kubeClient;
-	private final Executor ioExecutor;
 	private final KubernetesLeaderElectionConfiguration leaderConfig;
 
 	public KubernetesLeaderElectionDriverFactory(
 			FlinkKubeClient kubeClient,
-			Executor ioExecutor,
 			KubernetesLeaderElectionConfiguration leaderConfig) {
 		this.kubeClient = kubeClient;
-		this.ioExecutor = ioExecutor;
 		this.leaderConfig = leaderConfig;
 	}
 
@@ -51,6 +46,6 @@ public class KubernetesLeaderElectionDriverFactory implements LeaderElectionDriv
 			FatalErrorHandler fatalErrorHandler,
 			String leaderContenderDescription) {
 		return new KubernetesLeaderElectionDriver(
-			kubeClient, ioExecutor, leaderConfig, leaderEventHandler, fatalErrorHandler);
+			kubeClient, leaderConfig, leaderEventHandler, fatalErrorHandler);
 	}
 }

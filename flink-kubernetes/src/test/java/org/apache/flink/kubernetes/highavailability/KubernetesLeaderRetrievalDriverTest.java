@@ -21,35 +21,38 @@ package org.apache.flink.kubernetes.highavailability;
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
 import org.apache.flink.kubernetes.utils.Constants;
+import org.apache.flink.runtime.leaderelection.LeaderInformation;
 
 import org.junit.Test;
 
 import java.util.Collections;
-import java.util.concurrent.TimeUnit;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.Assert.assertThat;
 
 /**
  * Tests for the {@link KubernetesLeaderRetrievalDriver}.
  */
-public class KubernetesLeaderRetrievalTest extends KubernetesHighAvailabilityTestBase {
+public class KubernetesLeaderRetrievalDriverTest extends KubernetesHighAvailabilityTestBase {
 
 	@Test
-	public void testKubernetesLeaderRetrievalOnAdded() throws Exception {
+	public void testErrorForwarding() throws Exception {
 		new Context() {{
-			runTestAndGrantLeadershipToContender(
+			runTest(
 				() -> {
-					leaderElectionDriver.writeLeaderInformation(electionEventHandler.getLeaderInformation());
-					assertThat(configMapCallbackFutures.size(), is(2));
+					leaderCallbackGrantLeadership();
+
+					final LeaderInformation confirmedLeader = electionEventHandler.getConfirmedLeaderInformation();
+
 					final FlinkKubeClient.WatchCallbackHandler<KubernetesConfigMap> callbackHandler =
-						configMapCallbackFutures.get(1).get(TIMEOUT, TimeUnit.MILLISECONDS);
-					assertThat(callbackHandler, is(notNullValue()));
+						getLeaderRetrievalConfigMapCallback();
+
 					// A new leader is elected.
-					callbackHandler.onAdded(Collections.singletonList(getLeaderConfigMap()));
-					assertThat(retrievalEventHandler.waitForNewLeader(TIMEOUT), is(LEADER_URL));
+					callbackHandler.onError(Collections.singletonList(getLeaderConfigMap()));
+					final String errMsg = "Error while watching the ConfigMap " + LEADER_CONFIGMAP_NAME;
+					assertThat(retrievalEventHandler.getError().getMessage(), containsString(errMsg));
 				});
 		}};
 	}
@@ -57,16 +60,18 @@ public class KubernetesLeaderRetrievalTest extends KubernetesHighAvailabilityTes
 	@Test
 	public void testKubernetesLeaderRetrievalOnModified() throws Exception {
 		new Context() {{
-			runTestAndGrantLeadershipToContender(
+			runTest(
 				() -> {
-					assertThat(configMapCallbackFutures.size(), is(2));
+					leaderCallbackGrantLeadership();
+
 					final FlinkKubeClient.WatchCallbackHandler<KubernetesConfigMap> callbackHandler =
-						configMapCallbackFutures.get(1).get(TIMEOUT, TimeUnit.MILLISECONDS);
-					assertThat(callbackHandler, is(notNullValue()));
+						getLeaderRetrievalConfigMapCallback();
+
 					// Leader changed
 					final String newLeader = LEADER_URL + "_" + 2;
 					getLeaderConfigMap().getData().put(Constants.LEADER_ADDRESS_KEY, newLeader);
 					callbackHandler.onModified(Collections.singletonList(getLeaderConfigMap()));
+
 					assertThat(retrievalEventHandler.waitForNewLeader(TIMEOUT), is(newLeader));
 				});
 		}};
@@ -75,12 +80,13 @@ public class KubernetesLeaderRetrievalTest extends KubernetesHighAvailabilityTes
 	@Test
 	public void testKubernetesLeaderRetrievalOnModifiedWithEmpty() throws Exception {
 		new Context() {{
-			runTestAndGrantLeadershipToContender(
+			runTest(
 				() -> {
-					assertThat(configMapCallbackFutures.size(), is(2));
+					leaderCallbackGrantLeadership();
+
 					final FlinkKubeClient.WatchCallbackHandler<KubernetesConfigMap> callbackHandler =
-						configMapCallbackFutures.get(1).get(TIMEOUT, TimeUnit.MILLISECONDS);
-					assertThat(callbackHandler, is(notNullValue()));
+						getLeaderRetrievalConfigMapCallback();
+
 					// Leader information is cleared
 					getLeaderConfigMap().getData().clear();
 					callbackHandler.onModified(Collections.singletonList(getLeaderConfigMap()));

@@ -358,8 +358,9 @@ public class Fabric8FlinkKubeClientTest extends KubernetesClientTestBase {
 			future.get();
 			fail("Exception should be thrown.");
 		} catch (Exception ex) {
-			assertThat(ExceptionUtils.findThrowableWithMessage(
-				ex, "Not retry since " + TESTING_CONFIG_MAP_NAME + " does not exist").isPresent(), is(true));
+			final String errMsg = "Cannot retry checkAndUpdateConfigMap with configMap "
+				+ TESTING_CONFIG_MAP_NAME + " because it does not exist.";
+			assertThat(ExceptionUtils.findThrowableWithMessage(ex, errMsg).isPresent(), is(true));
 			// Should not retry when ConfigMap does not exist.
 			assertThat(ex.getMessage(), not(containsString("Number of retries has been exhausted")));
 		}

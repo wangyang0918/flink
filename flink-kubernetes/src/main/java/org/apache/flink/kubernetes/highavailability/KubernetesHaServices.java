@@ -100,7 +100,7 @@ public class KubernetesHaServices extends AbstractHaServices {
 		final KubernetesLeaderElectionConfiguration leaderConfig = new KubernetesLeaderElectionConfiguration(
 			leaderName, lockIdentity, configuration);
 		return new DefaultLeaderElectionService(
-			new KubernetesLeaderElectionDriverFactory(kubeClient, ioExecutor, leaderConfig));
+			new KubernetesLeaderElectionDriverFactory(kubeClient, leaderConfig));
 	}
 
 	@Override

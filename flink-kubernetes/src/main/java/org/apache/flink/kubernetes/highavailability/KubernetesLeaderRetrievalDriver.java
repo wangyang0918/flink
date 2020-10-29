@@ -28,8 +28,6 @@ import org.apache.flink.runtime.rpc.FatalErrorHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.concurrent.GuardedBy;
-
 import java.util.List;
 
 import static org.apache.flink.kubernetes.utils.KubernetesUtils.checkConfigMaps;
@@ -46,8 +44,6 @@ public class KubernetesLeaderRetrievalDriver implements LeaderRetrievalDriver {
 
 	private static final Logger LOG = LoggerFactory.getLogger(KubernetesLeaderRetrievalDriver.class);
 
-	private final Object lock = new Object();
-
 	private final String configMapName;
 
 	private final LeaderRetrievalEventHandler leaderRetrievalEventHandler;
@@ -56,7 +52,6 @@ public class KubernetesLeaderRetrievalDriver implements LeaderRetrievalDriver {
 
 	private final FatalErrorHandler fatalErrorHandler;
 
-	@GuardedBy("lock")
 	private volatile boolean running;
 
 	public KubernetesLeaderRetrievalDriver(
@@ -76,27 +71,27 @@ public class KubernetesLeaderRetrievalDriver implements LeaderRetrievalDriver {
 
 	@Override
 	public void close() {
-		synchronized (lock) {
-			if (!running) {
-				return;
-			}
-			running = false;
-
-			LOG.info("Stopping {}.", this);
-			kubernetesWatch.close();
+		if (!running) {
+			return;
 		}
+		running = false;
+
+		LOG.info("Stopping {}.", this);
+		kubernetesWatch.close();
 	}
 
 	private class ConfigMapCallbackHandlerImpl implements FlinkKubeClient.WatchCallbackHandler<KubernetesConfigMap> {
 
 		@Override
 		public void onAdded(List<KubernetesConfigMap> configMaps) {
-			handleEvent(configMaps);
+			// The ConfigMap is created by KubernetesLeaderElectionDriver with empty data. We do not notify
+			// this empty leader.
 		}
 
 		@Override
 		public void onModified(List<KubernetesConfigMap> configMaps) {
-			handleEvent(configMaps);
+			final KubernetesConfigMap configMap = checkConfigMaps(configMaps, configMapName);
+			leaderRetrievalEventHandler.notifyLeaderAddress(getLeaderInformationFromConfigMap(configMap));
 		}
 
 		@Override
@@ -106,29 +101,15 @@ public class KubernetesLeaderRetrievalDriver implements LeaderRetrievalDriver {
 
 		@Override
 		public void onError(List<KubernetesConfigMap> configMaps) {
-			synchronized (lock) {
-				if (running) {
-					fatalErrorHandler.onFatalError(new Exception("Error while watching the ConfigMap " + configMapName));
-				}
+			if (running) {
+				fatalErrorHandler.onFatalError(new Exception("Error while watching the ConfigMap " + configMapName));
 			}
 		}
 
 		@Override
 		public void handleFatalError(Throwable throwable) {
-			synchronized (lock) {
-				if (running) {
-					fatalErrorHandler.onFatalError(new Exception("Error while watching the ConfigMap " + configMapName));
-				}
-			}
-		}
-
-		@GuardedBy("lock")
-		private void handleEvent(List<KubernetesConfigMap> configMaps) {
-			synchronized (lock) {
-				if (running) {
-					final KubernetesConfigMap configMap = checkConfigMaps(configMaps, configMapName);
-					leaderRetrievalEventHandler.notifyLeaderAddress(getLeaderInformationFromConfigMap(configMap));
-				}
+			if (running) {
+				fatalErrorHandler.onFatalError(new Exception("Error while watching the ConfigMap " + configMapName));
 			}
 		}
 	}

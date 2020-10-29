@@ -16,15 +16,16 @@
  * limitations under the License.
  */
 
-package org.apache.flink.kubernetes.itcases;
+package org.apache.flink.kubernetes.kubeclient;
 
+import org.apache.flink.kubernetes.KubernetesResource;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
 import org.apache.flink.runtime.concurrent.FutureUtils;
 
 import io.fabric8.kubernetes.api.model.ConfigMapBuilder;
 import org.junit.After;
-import org.junit.Assert;
 import org.junit.Before;
+import org.junit.ClassRule;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -42,9 +43,14 @@ import static org.junit.Assert.assertThat;
 /**
  * IT Tests for {@link org.apache.flink.kubernetes.kubeclient.Fabric8FlinkKubeClient} with real K8s server and client.
  */
-public class Fabric8FlinkKubeClientITCase extends KubernetesITTestBase {
+public class Fabric8FlinkKubeClientITCase {
+
+	@ClassRule
+	public static KubernetesResource kubernetesResource = new KubernetesResource();
 
 	private static final String TEST_CONFIG_MAP_NAME = "test-config-map";
+
+	private static final long TIMEOUT = 120L * 1000L;
 
 	private static final Map<String, String> data = new HashMap<String, String>() {
 		{
@@ -54,9 +60,11 @@ public class Fabric8FlinkKubeClientITCase extends KubernetesITTestBase {
 		}
 	};
 
+	private FlinkKubeClient flinkKubeClient;
+
 	@Before
 	public void setup() throws Exception {
-		super.setup();
+		flinkKubeClient = kubernetesResource.getFlinkKubeClient();
 		flinkKubeClient.createConfigMap(new KubernetesConfigMap(
 			new ConfigMapBuilder()
 				.withNewMetadata()
@@ -69,7 +77,6 @@ public class Fabric8FlinkKubeClientITCase extends KubernetesITTestBase {
 	@After
 	public void teardown() throws Exception {
 		flinkKubeClient.deleteConfigMap(TEST_CONFIG_MAP_NAME).get();
-		super.teardown();
 	}
 
 	/**
@@ -81,30 +88,27 @@ public class Fabric8FlinkKubeClientITCase extends KubernetesITTestBase {
 		// Start multiple instances to update ConfigMap concurrently
 		final List<CompletableFuture<Void>> futures = new ArrayList<>();
 		final int target = 10;
-		final int updateIntervalMs = 500;
-		data.keySet().forEach(
-			key -> futures.add(CompletableFuture.runAsync(() -> {
+		final int updateIntervalMs = 100;
+		for (String key : data.keySet()) {
+			futures.add(FutureUtils.runAfterwardsAsync(FutureUtils.completedVoidFuture(), () -> {
 				for (int index = 0; index < target; index++) {
-					try {
-						final boolean updated = flinkKubeClient.checkAndUpdateConfigMap(
-							TEST_CONFIG_MAP_NAME,
-							configMap -> {
-								final int newValue = Integer.valueOf(configMap.getData().get(key)) + 1;
-								configMap.getData().put(key, String.valueOf(newValue));
-								return Optional.of(configMap);
-							}).get();
-						assertThat(updated, is(true));
-					} catch (Exception e) {
-						Assert.fail("Should not throw exception." + e.getMessage());
-					}
+					final boolean updated = flinkKubeClient.checkAndUpdateConfigMap(
+						TEST_CONFIG_MAP_NAME,
+						configMap -> {
+							final int newValue = Integer.valueOf(configMap.getData().get(key)) + 1;
+							configMap.getData().put(key, String.valueOf(newValue));
+							return Optional.of(configMap);
+						}).get();
+					assertThat(updated, is(true));
 					try {
 						// Simulate the update interval
-						Thread.sleep(updateIntervalMs);
+						Thread.sleep((long) (updateIntervalMs * Math.random()));
 					} catch (InterruptedException e) {
 						// noop
 					}
 				}
-			}, executorService)));
+			}, kubernetesResource.getExecutorService()));
+		}
 		FutureUtils.waitForAll(futures).get(TIMEOUT, TimeUnit.MILLISECONDS);
 		// All the value should be increased exactly to the target
 		final Optional<KubernetesConfigMap> configMapOpt = flinkKubeClient.getConfigMap(TEST_CONFIG_MAP_NAME);

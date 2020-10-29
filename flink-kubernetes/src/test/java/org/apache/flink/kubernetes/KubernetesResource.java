@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.flink.kubernetes.itcases;
+package org.apache.flink.kubernetes;
 
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
@@ -26,10 +26,10 @@ import org.apache.flink.kubernetes.kubeclient.KubeClientFactory;
 import org.apache.flink.runtime.util.ExecutorThreadFactory;
 import org.apache.flink.util.StringUtils;
 
-import org.junit.After;
 import org.junit.Assume;
-import org.junit.Before;
-import org.junit.BeforeClass;
+import org.junit.rules.ExternalResource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -40,20 +40,19 @@ import java.util.concurrent.TimeUnit;
  * ITCases assume that the environment ITCASE_KUBECONFIG is set with a valid kube config file. In the E2E tests, we
  * will use a minikube for the testing.
  */
-public class KubernetesITTestBase {
+public class KubernetesResource extends ExternalResource {
 
-	protected static final long TIMEOUT = 120L * 1000L;
+	private static final Logger LOG = LoggerFactory.getLogger(KubernetesResource.class);
+
+	private static final long TIMEOUT = 30L * 1000L;
 
 	private static final String CLUSTER_ID = "flink-itcase-cluster";
 
-	protected final KubeClientFactory kubeClientFactory = new DefaultKubeClientFactory();
-
 	private static String kubeConfigFile;
-	protected Configuration configuration;
-	protected FlinkKubeClient flinkKubeClient;
-	protected ExecutorService executorService;
+	private Configuration configuration;
+	private FlinkKubeClient flinkKubeClient;
+	private ExecutorService executorService;
 
-	@BeforeClass
 	public static void checkEnv() {
 		final String kubeConfigEnv = System.getenv("ITCASE_KUBECONFIG");
 		Assume.assumeTrue("ITCASE_KUBECONFIG environment is not set.",
@@ -61,19 +60,38 @@ public class KubernetesITTestBase {
 		kubeConfigFile = kubeConfigEnv;
 	}
 
-	@Before
-	public void setup() throws Exception {
+	@Override
+	public void before() {
+		checkEnv();
+
 		configuration = new Configuration();
 		configuration.set(KubernetesConfigOptions.KUBE_CONFIG_FILE, kubeConfigFile);
 		configuration.setString(KubernetesConfigOptions.CLUSTER_ID, CLUSTER_ID);
 		executorService = Executors.newFixedThreadPool(8, new ExecutorThreadFactory("IO-Executor"));
+		final KubeClientFactory kubeClientFactory = new DefaultKubeClientFactory();
 		flinkKubeClient = kubeClientFactory.fromConfiguration(configuration, executorService);
 	}
 
-	@After
-	public void teardown() throws Exception {
+	@Override
+	public void after() {
 		flinkKubeClient.close();
 		executorService.shutdownNow();
-		executorService.awaitTermination(TIMEOUT, TimeUnit.MILLISECONDS);
+		try {
+			executorService.awaitTermination(TIMEOUT, TimeUnit.MILLISECONDS);
+		} catch (Exception e) {
+			LOG.warn("Could not properly shutdown the executor service.", e);
+		}
+	}
+
+	public Configuration getConfiguration() {
+		return configuration;
+	}
+
+	public FlinkKubeClient getFlinkKubeClient() {
+		return flinkKubeClient;
+	}
+
+	public ExecutorService getExecutorService() {
+		return executorService;
 	}
 }

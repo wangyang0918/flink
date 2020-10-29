@@ -38,7 +38,7 @@ public class KubernetesHaServicesTest extends KubernetesHighAvailabilityTestBase
 	@Test
 	public void testInternalCloseShouldCloseFlinkKubeClient() throws Exception {
 		new Context() {{
-			runTestAndGrantLeadershipToContender(
+			runTest(
 				() -> {
 					final KubernetesHaServices kubernetesHaServices =
 						new KubernetesHaServices(flinkKubeClient, executorService, configuration, new VoidBlobStore());
@@ -51,7 +51,7 @@ public class KubernetesHaServicesTest extends KubernetesHighAvailabilityTestBase
 	@Test
 	public void testInternalCleanupShouldCleanupConfigMaps() throws Exception {
 		new Context() {{
-			runTestAndGrantLeadershipToContender(
+			runTest(
 				() -> {
 					final KubernetesHaServices kubernetesHaServices =
 						new KubernetesHaServices(flinkKubeClient, executorService, configuration, new VoidBlobStore());

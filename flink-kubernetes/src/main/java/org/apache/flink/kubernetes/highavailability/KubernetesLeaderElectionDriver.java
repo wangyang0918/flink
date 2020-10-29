@@ -25,7 +25,6 @@ import org.apache.flink.kubernetes.kubeclient.resources.KubernetesException;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesLeaderElector;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesWatch;
 import org.apache.flink.kubernetes.utils.KubernetesUtils;
-import org.apache.flink.runtime.concurrent.FutureUtils;
 import org.apache.flink.runtime.leaderelection.LeaderElectionDriver;
 import org.apache.flink.runtime.leaderelection.LeaderElectionEventHandler;
 import org.apache.flink.runtime.leaderelection.LeaderElectionException;
@@ -36,15 +35,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
-import javax.annotation.concurrent.GuardedBy;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 
 import static org.apache.flink.kubernetes.utils.Constants.LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY;
 import static org.apache.flink.kubernetes.utils.Constants.LEADER_ADDRESS_KEY;
@@ -63,11 +58,7 @@ public class KubernetesLeaderElectionDriver implements LeaderElectionDriver {
 
 	private static final Logger LOG = LoggerFactory.getLogger(KubernetesLeaderElectionDriver.class);
 
-	private final Object lock = new Object();
-
 	private final FlinkKubeClient kubeClient;
-
-	private final Executor ioExecutor;
 
 	private final String configMapName;
 
@@ -84,53 +75,46 @@ public class KubernetesLeaderElectionDriver implements LeaderElectionDriver {
 
 	private final FatalErrorHandler fatalErrorHandler;
 
-	@GuardedBy("lock")
-	private volatile CompletableFuture<Void> leaderElectorRunFuture;
-
-	@GuardedBy("lock")
 	private volatile boolean running;
 
 	public KubernetesLeaderElectionDriver(
 			FlinkKubeClient kubeClient,
-			Executor ioExecutor,
 			KubernetesLeaderElectionConfiguration leaderConfig,
 			LeaderElectionEventHandler leaderElectionEventHandler,
 			FatalErrorHandler fatalErrorHandler) {
 
 		this.kubeClient = checkNotNull(kubeClient, "Kubernetes client");
-		this.ioExecutor = checkNotNull(ioExecutor, "IO Executor");
 
 		this.leaderElectionEventHandler = checkNotNull(leaderElectionEventHandler, "LeaderElectionEventHandler");
 		this.fatalErrorHandler = checkNotNull(fatalErrorHandler);
 
+		checkNotNull(leaderConfig);
 		this.configMapName = leaderConfig.getConfigMapName();
 		this.lockIdentity = leaderConfig.getLockIdentity();
 		this.leaderElector = kubeClient.createLeaderElector(leaderConfig, new LeaderCallbackHandlerImpl());
 		this.configMapLabels = KubernetesUtils.getConfigMapLabels(
 			leaderConfig.getClusterId(), LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY);
 
-		leaderElectorRunFuture = CompletableFuture.runAsync(leaderElector::run, ioExecutor);
-		FutureUtils.assertNoException(leaderElectorRunFuture);
+		leaderElector.run();
 		kubernetesWatch = kubeClient.watchConfigMaps(configMapName, new ConfigMapCallbackHandlerImpl());
 		running = true;
 	}
 
 	@Override
 	public void close() {
-		synchronized (lock) {
-			if (!running) {
-				return;
-			}
-			running = false;
-
-			LOG.info("Closing {}.", this);
-			leaderElectorRunFuture.complete(null);
-			kubernetesWatch.close();
+		if (!running) {
+			return;
 		}
+		running = false;
+
+		LOG.info("Closing {}.", this);
+		leaderElector.stop();
+		kubernetesWatch.close();
 	}
 
 	@Override
 	public void writeLeaderInformation(LeaderInformation leaderInformation) {
+		assert(running);
 		final UUID confirmedLeaderSessionID = leaderInformation.getLeaderSessionID();
 		final String confirmedLeaderAddress = leaderInformation.getLeaderAddress();
 		try {
@@ -139,8 +123,14 @@ public class KubernetesLeaderElectionDriver implements LeaderElectionDriver {
 				configMap -> {
 					if (KubernetesLeaderElector.hasLeadership(configMap, lockIdentity)) {
 						// Get the updated ConfigMap with new leader information
-						if (confirmedLeaderAddress != null && confirmedLeaderSessionID != null) {
+						if (confirmedLeaderAddress == null) {
+							configMap.getData().remove(LEADER_ADDRESS_KEY);
+						} else {
 							configMap.getData().put(LEADER_ADDRESS_KEY, confirmedLeaderAddress);
+						}
+						if (confirmedLeaderSessionID == null) {
+							configMap.getData().remove(LEADER_SESSION_ID_KEY);
+						} else {
 							configMap.getData().put(LEADER_SESSION_ID_KEY, confirmedLeaderSessionID.toString());
 						}
 						configMap.getLabels().putAll(configMapLabels);
@@ -148,20 +138,28 @@ public class KubernetesLeaderElectionDriver implements LeaderElectionDriver {
 					}
 					return Optional.empty();
 				}).get();
+			if (LOG.isDebugEnabled()) {
+				LOG.debug(
+					"Successfully wrote leader information: Leader={}, session ID={}.",
+					confirmedLeaderAddress,
+					confirmedLeaderSessionID);
+			}
 		} catch (Exception e) {
 			fatalErrorHandler.onFatalError(
-				new KubernetesException("Could not update ConfigMap " + configMapName, e));
+				new KubernetesException("Could not write leader information since ConfigMap " + configMapName
+					+ " does not exist.", e));
 		}
 	}
 
 	@Override
 	public boolean hasLeadership() {
+		assert(running);
 		final Optional<KubernetesConfigMap> configMapOpt = kubeClient.getConfigMap(configMapName);
 		if (configMapOpt.isPresent()) {
 			return KubernetesLeaderElector.hasLeadership(configMapOpt.get(), lockIdentity);
 		} else {
 			fatalErrorHandler.onFatalError(
-				new KubernetesException("ConfigMap " + configMapName + "does not exist.", null));
+				new KubernetesException("ConfigMap " + configMapName + " does not exist.", null));
 			return false;
 		}
 	}
@@ -170,52 +168,18 @@ public class KubernetesLeaderElectionDriver implements LeaderElectionDriver {
 
 		@Override
 		public void isLeader() {
-			synchronized (lock) {
-				if (running) {
-					leaderElectionEventHandler.onGrantLeadership();
-				}
-			}
+			leaderElectionEventHandler.onGrantLeadership();
 		}
 
 		@Override
 		public void notLeader() {
-			synchronized (lock) {
-				if (running) {
-					// Clear the leader information in ConfigMap
-					try {
-						kubeClient.checkAndUpdateConfigMap(
-							configMapName,
-							configMap -> {
-								if (KubernetesLeaderElector.hasLeadership(configMap, lockIdentity)) {
-									configMap.getData().remove(LEADER_ADDRESS_KEY);
-									configMap.getData().remove(LEADER_SESSION_ID_KEY);
-									return Optional.of(configMap);
-								}
-								return Optional.empty();
-							}
-						).get();
-					} catch (Exception e) {
-						fatalErrorHandler.onFatalError(
-							new LeaderElectionException(
-								"Could not remove leader information from ConfigMap " + configMapName, e));
-					}
-					leaderElectionEventHandler.onRevokeLeadership();
-					// Continue to contend the leader
-					if (!leaderElectorRunFuture.isDone()) {
-						leaderElectorRunFuture.complete(null);
-					}
-					leaderElectorRunFuture = CompletableFuture.runAsync(leaderElector::run, ioExecutor);
-					FutureUtils.assertNoException(leaderElectorRunFuture);
-				}
-			}
+			leaderElectionEventHandler.onRevokeLeadership();
+			// Continue to contend the leader
+			leaderElector.run();
 		}
 	}
 
 	private class ConfigMapCallbackHandlerImpl implements FlinkKubeClient.WatchCallbackHandler<KubernetesConfigMap> {
-		// This is used to get the difference between current and previous data. Since the annotation will be updated
-		// periodically, we need to filter out these noises.
-		final Map<String, String> previousData = new HashMap<>();
-
 		@Override
 		public void onAdded(List<KubernetesConfigMap> configMaps) {
 			// noop
@@ -226,17 +190,8 @@ public class KubernetesLeaderElectionDriver implements LeaderElectionDriver {
 			// We should only receive events for the watched ConfigMap
 			final KubernetesConfigMap configMap = checkConfigMaps(configMaps, configMapName);
 
-			if (!configMap.getData().equals(previousData)) {
-				if (KubernetesLeaderElector.hasLeadership(configMap, lockIdentity)) {
-					synchronized (lock) {
-						if (running) {
-							leaderElectionEventHandler.onLeaderInformationChange(
-								getLeaderInformationFromConfigMap(configMap));
-						}
-					}
-				}
-				previousData.clear();
-				previousData.putAll(configMap.getData());
+			if (KubernetesLeaderElector.hasLeadership(configMap, lockIdentity)) {
+				leaderElectionEventHandler.onLeaderInformationChange(getLeaderInformationFromConfigMap(configMap));
 			}
 		}
 
@@ -253,21 +208,18 @@ public class KubernetesLeaderElectionDriver implements LeaderElectionDriver {
 		public void onError(List<KubernetesConfigMap> configMaps) {
 			final KubernetesConfigMap configMap = checkConfigMaps(configMaps, configMapName);
 			if (KubernetesLeaderElector.hasLeadership(configMap, lockIdentity)) {
-				handleFatalError("Error while watching the configMap " + configMapName, null);
+				handleFatalError("Error while watching the ConfigMap " + configMapName, null);
 			}
 		}
 
 		@Override
 		public void handleFatalError(Throwable throwable) {
-			handleFatalError("Fatal error while watching the configMap " + configMapName, throwable);
+			handleFatalError("Error while watching the ConfigMap " + configMapName, throwable);
 		}
 
-		@GuardedBy("lock")
 		private void handleFatalError(String errorMsg, @Nullable Throwable throwable) {
-			synchronized (lock) {
-				if (running) {
-					fatalErrorHandler.onFatalError(new LeaderElectionException(errorMsg, throwable));
-				}
+			if (running) {
+				fatalErrorHandler.onFatalError(new LeaderElectionException(errorMsg, throwable));
 			}
 		}
 	}

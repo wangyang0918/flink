@@ -20,6 +20,8 @@ package org.apache.flink.kubernetes.kubeclient.resources;
 
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.kubernetes.configuration.KubernetesLeaderElectionConfiguration;
+import org.apache.flink.runtime.util.ExecutorThreadFactory;
+import org.apache.flink.util.ExecutorUtils;
 
 import io.fabric8.kubernetes.client.NamespacedKubernetesClient;
 import io.fabric8.kubernetes.client.extended.leaderelection.LeaderCallbacks;
@@ -29,9 +31,14 @@ import io.fabric8.kubernetes.client.extended.leaderelection.resourcelock.ConfigM
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
 /**
  * Represent {@link KubernetesLeaderElector} in kubernetes. {@link LeaderElector#run()} is a blocking call. It should be
- *  run in the IO executor, not the main thread. The lifecycle is bound to single leader election. Once the leadership
+ * run in the IO executor, not the main thread. The lifecycle is bound to single leader election. Once the leadership
  * is revoked, as well as the {@link LeaderCallbackHandler#notLeader()} is called, the {@link LeaderElector#run()} will
  * finish. To start another round of election, we need to trigger again.
  *
@@ -46,6 +53,9 @@ public class KubernetesLeaderElector extends LeaderElector<NamespacedKubernetesC
 	private static final Logger LOG = LoggerFactory.getLogger(KubernetesLeaderElector.class);
 	@VisibleForTesting
 	public static final String LEADER_ANNOTATION_KEY = "control-plane.alpha.kubernetes.io/leader";
+
+	private final ExecutorService executorService = Executors.newSingleThreadExecutor(
+		new ExecutorThreadFactory("KubernetesLeaderElector-ExecutorService"));
 
 	public KubernetesLeaderElector(
 			NamespacedKubernetesClient kubernetesClient,
@@ -66,6 +76,15 @@ public class KubernetesLeaderElector extends LeaderElector<NamespacedKubernetesC
 			.build());
 		LOG.info("Create KubernetesLeaderElector {} with lock identity {}.",
 			leaderConfig.getConfigMapName(), leaderConfig.getLockIdentity());
+	}
+
+	@Override
+	public void run() {
+		CompletableFuture.runAsync(super::run, executorService);
+	}
+
+	public void stop() {
+		ExecutorUtils.gracefulShutdown(5, TimeUnit.SECONDS, executorService);
 	}
 
 	public static boolean hasLeadership(KubernetesConfigMap configMap, String lockIdentity) {

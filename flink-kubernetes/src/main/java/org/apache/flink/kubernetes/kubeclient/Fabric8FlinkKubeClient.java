@@ -287,7 +287,8 @@ public class Fabric8FlinkKubeClient implements FlinkKubeClient {
 								return true;
 							}).orElse(false))
 					.orElseThrow(() -> new CompletionException(
-						new KubernetesException("Not retry since " + configMapName + " does not exist."))),
+						new KubernetesException("Cannot retry checkAndUpdateConfigMap with configMap "
+							+ configMapName + " because it does not exist."))),
 				kubeClientExecutorService),
 			maxRetryAttempts,
 			// Only KubernetesClientException is retryable
