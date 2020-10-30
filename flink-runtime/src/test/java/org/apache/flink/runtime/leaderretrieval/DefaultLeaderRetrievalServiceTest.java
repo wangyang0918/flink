@@ -1,0 +1,120 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.flink.runtime.leaderretrieval;
+
+import org.apache.flink.runtime.leaderelection.DefaultLeaderElectionService;
+import org.apache.flink.runtime.leaderelection.LeaderInformation;
+import org.apache.flink.runtime.leaderelection.TestingListener;
+import org.apache.flink.util.TestLogger;
+import org.apache.flink.util.function.RunnableWithException;
+
+import org.junit.Test;
+
+import java.util.UUID;
+
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
+import static org.junit.Assert.assertThat;
+
+/**
+ * Tests for {@link DefaultLeaderElectionService}.
+ */
+public class DefaultLeaderRetrievalServiceTest extends TestLogger {
+
+	private static final String TEST_URL = "akka//user/jobmanager";
+	private static final long timeout = 30L * 1000L;
+
+	@Test
+	public void testNotifyLeaderAddress() throws Exception {
+		new Context() {{
+			runTest(() -> {
+				final LeaderInformation newLeader = LeaderInformation.known(UUID.randomUUID(), TEST_URL);
+				testingLeaderRetrievalDriver.onUpdate(newLeader);
+				testingListener.waitForNewLeader(timeout);
+				assertThat(testingListener.getLeaderSessionID(), is(newLeader.getLeaderSessionID()));
+				assertThat(testingListener.getAddress(), is(newLeader.getLeaderAddress()));
+			});
+		}};
+	}
+
+	@Test
+	public void testNotifyLeaderAddressEmpty() throws Exception {
+		new Context() {{
+			runTest(() -> {
+				final LeaderInformation newLeader = LeaderInformation.known(UUID.randomUUID(), TEST_URL);
+				testingLeaderRetrievalDriver.onUpdate(newLeader);
+				testingListener.waitForNewLeader(timeout);
+
+				testingLeaderRetrievalDriver.onUpdate(LeaderInformation.empty());
+				testingListener.waitForEmptyLeaderInformation(timeout);
+				assertThat(testingListener.getLeaderSessionID(), is(nullValue()));
+				assertThat(testingListener.getAddress(), is(nullValue()));
+			});
+		}};
+	}
+
+	@Test
+	public void testErrorForwarding() throws Exception {
+		new Context() {{
+			runTest(() -> {
+				final Exception testException = new Exception("test Exeption");
+
+				testingLeaderRetrievalDriver.getFatalErrorHandler().onFatalError(testException);
+
+				assertThat(testingListener.getError().getMessage(), containsString(testException.getMessage()));
+			});
+		}};
+	}
+
+	@Test
+	public void testErrorHappenAfterStop() throws Exception {
+		new Context() {{
+			runTest(() -> {
+				final Exception testException = new Exception("test Exeption");
+
+				leaderRetrievalService.stop();
+				testingLeaderRetrievalDriver.getFatalErrorHandler().onFatalError(testException);
+
+				assertThat(testingListener.getError(), is(nullValue()));
+			});
+		}};
+	}
+
+	private class Context {
+		private final TestingLeaderRetrievalDriver.TestingLeaderRetrievalDriverFactory leaderRetrievalDriverFactory =
+			new TestingLeaderRetrievalDriver.TestingLeaderRetrievalDriverFactory();
+		final DefaultLeaderRetrievalService leaderRetrievalService = new DefaultLeaderRetrievalService(
+			leaderRetrievalDriverFactory);
+		final TestingListener testingListener = new TestingListener();
+
+		TestingLeaderRetrievalDriver testingLeaderRetrievalDriver;
+
+		void runTest(RunnableWithException testMethod) throws Exception {
+			leaderRetrievalService.start(testingListener);
+
+			testingLeaderRetrievalDriver = leaderRetrievalDriverFactory.getCurrentRetrievalDriver();
+			assertThat(testingLeaderRetrievalDriver, is(notNullValue()));
+			testMethod.run();
+
+			leaderRetrievalService.stop();
+		}
+	}
+}
