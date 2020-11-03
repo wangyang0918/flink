@@ -41,7 +41,7 @@ public abstract class AbstractKubernetesWatcher<T extends HasMetadata, K extends
 
 	@Override
 	public void onClose(KubernetesClientException cause) {
-		// null means the watcher is closed by expected.
+		// null means the watcher is closed normally.
 		if (cause == null) {
 			logger.info("The watcher is closing.");
 		} else {
