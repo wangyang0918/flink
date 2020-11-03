@@ -23,6 +23,7 @@ import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesWatch;
 import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalDriver;
 import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalEventHandler;
+import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalException;
 import org.apache.flink.runtime.rpc.FatalErrorHandler;
 
 import org.slf4j.Logger;
@@ -101,12 +102,14 @@ public class KubernetesLeaderRetrievalDriver implements LeaderRetrievalDriver {
 
 		@Override
 		public void onError(List<KubernetesConfigMap> configMaps) {
-			fatalErrorHandler.onFatalError(new Exception("Error while watching the ConfigMap " + configMapName));
+			fatalErrorHandler.onFatalError(
+				new LeaderRetrievalException("Error while watching the ConfigMap " + configMapName));
 		}
 
 		@Override
 		public void handleFatalError(Throwable throwable) {
-			fatalErrorHandler.onFatalError(new Exception("Error while watching the ConfigMap " + configMapName));
+			fatalErrorHandler.onFatalError(
+				new LeaderRetrievalException("Error while watching the ConfigMap " + configMapName));
 		}
 	}
 

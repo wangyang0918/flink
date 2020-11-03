@@ -19,7 +19,6 @@
 package org.apache.flink.kubernetes.highavailability;
 
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
-import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalDriver;
 import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalDriverFactory;
 import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalEventHandler;
 import org.apache.flink.runtime.rpc.FatalErrorHandler;
@@ -39,7 +38,7 @@ public class KubernetesLeaderRetrievalDriverFactory implements LeaderRetrievalDr
 	}
 
 	@Override
-	public LeaderRetrievalDriver createLeaderRetrievalDriver(
+	public KubernetesLeaderRetrievalDriver createLeaderRetrievalDriver(
 			LeaderRetrievalEventHandler leaderEventHandler,
 			FatalErrorHandler fatalErrorHandler) {
 		return new KubernetesLeaderRetrievalDriver(kubeClient, configMapName, leaderEventHandler, fatalErrorHandler);

@@ -18,6 +18,7 @@
 
 package org.apache.flink.kubernetes.highavailability;
 
+import org.apache.flink.core.testutils.FlinkMatchers;
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
 import org.apache.flink.runtime.leaderelection.LeaderInformation;
@@ -32,7 +33,6 @@ import static org.apache.flink.kubernetes.utils.Constants.LABEL_CONFIGMAP_TYPE_H
 import static org.apache.flink.kubernetes.utils.Constants.LABEL_CONFIGMAP_TYPE_KEY;
 import static org.apache.flink.kubernetes.utils.Constants.LEADER_ADDRESS_KEY;
 import static org.apache.flink.kubernetes.utils.Constants.LEADER_SESSION_ID_KEY;
-import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
@@ -82,9 +82,9 @@ public class KubernetesLeaderElectionDriverTest extends KubernetesHighAvailabili
 				() -> {
 					leaderElectionDriver.hasLeadership();
 					electionEventHandler.waitForError(TIMEOUT);
-					final String errorMsg = "ConfigMap " + LEADER_CONFIGMAP_NAME + " does not exist";
+					final String errorMsg = "ConfigMap " + LEADER_CONFIGMAP_NAME + " does not exist.";
 					assertThat(electionEventHandler.getError(), is(notNullValue()));
-					assertThat(electionEventHandler.getError().getMessage(), containsString(errorMsg));
+					assertThat(electionEventHandler.getError(), FlinkMatchers.containsMessage(errorMsg));
 				});
 		}};
 	}
@@ -118,7 +118,7 @@ public class KubernetesLeaderElectionDriverTest extends KubernetesHighAvailabili
 					final String errorMsg = "Could not write leader information since ConfigMap "
 						+ LEADER_CONFIGMAP_NAME + " does not exist.";
 					assertThat(electionEventHandler.getError(), is(notNullValue()));
-					assertThat(electionEventHandler.getError().getMessage(), containsString(errorMsg));
+					assertThat(electionEventHandler.getError(), FlinkMatchers.containsMessage(errorMsg));
 				});
 		}};
 	}
@@ -165,7 +165,7 @@ public class KubernetesLeaderElectionDriverTest extends KubernetesHighAvailabili
 					electionEventHandler.waitForError(TIMEOUT);
 					final String errorMsg = "ConfigMap " + LEADER_CONFIGMAP_NAME + " is deleted externally";
 					assertThat(electionEventHandler.getError(), is(notNullValue()));
-					assertThat(electionEventHandler.getError().getMessage(), containsString(errorMsg));
+					assertThat(electionEventHandler.getError(), FlinkMatchers.containsMessage(errorMsg));
 				});
 		}};
 	}
@@ -184,7 +184,7 @@ public class KubernetesLeaderElectionDriverTest extends KubernetesHighAvailabili
 					electionEventHandler.waitForError(TIMEOUT);
 					final String errorMsg = "Error while watching the ConfigMap " + LEADER_CONFIGMAP_NAME;
 					assertThat(electionEventHandler.getError(), is(notNullValue()));
-					assertThat(electionEventHandler.getError().getMessage(), containsString(errorMsg));
+					assertThat(electionEventHandler.getError(), FlinkMatchers.containsMessage(errorMsg));
 				});
 		}};
 	}

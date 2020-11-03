@@ -22,6 +22,7 @@ import org.apache.flink.kubernetes.KubernetesResource;
 import org.apache.flink.kubernetes.configuration.KubernetesLeaderElectionConfiguration;
 import org.apache.flink.runtime.leaderelection.TestingLeaderElectionEventHandler;
 import org.apache.flink.runtime.leaderretrieval.TestingLeaderRetrievalEventHandler;
+import org.apache.flink.util.TestLogger;
 
 import org.junit.ClassRule;
 import org.junit.Test;
@@ -38,7 +39,7 @@ import static org.junit.Assert.assertThat;
  * {@link KubernetesLeaderElectionDriver} could become the leader and {@link KubernetesLeaderRetrievalDriver} could
  * retrieve the leader address from Kubernetes.
  */
-public class KubernetesLeaderElectionAndRetrievalITCase {
+public class KubernetesLeaderElectionAndRetrievalITCase extends TestLogger {
 
 	@ClassRule
 	public static KubernetesResource kubernetesResource = new KubernetesResource();

@@ -92,9 +92,9 @@ public class KubernetesLeaderElectionDriver implements LeaderElectionDriver {
 		this.configMapLabels = KubernetesUtils.getConfigMapLabels(
 			leaderConfig.getClusterId(), LABEL_CONFIGMAP_TYPE_HIGH_AVAILABILITY);
 
+		running = true;
 		leaderElector.run();
 		kubernetesWatch = kubeClient.watchConfigMaps(configMapName, new ConfigMapCallbackHandlerImpl());
-		running = true;
 	}
 
 	@Override

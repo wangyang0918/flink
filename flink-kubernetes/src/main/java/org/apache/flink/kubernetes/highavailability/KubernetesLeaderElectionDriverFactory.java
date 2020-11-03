@@ -20,7 +20,6 @@ package org.apache.flink.kubernetes.highavailability;
 
 import org.apache.flink.kubernetes.configuration.KubernetesLeaderElectionConfiguration;
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
-import org.apache.flink.runtime.leaderelection.LeaderElectionDriver;
 import org.apache.flink.runtime.leaderelection.LeaderElectionDriverFactory;
 import org.apache.flink.runtime.leaderelection.LeaderElectionEventHandler;
 import org.apache.flink.runtime.rpc.FatalErrorHandler;
@@ -41,7 +40,7 @@ public class KubernetesLeaderElectionDriverFactory implements LeaderElectionDriv
 	}
 
 	@Override
-	public LeaderElectionDriver createLeaderElectionDriver(
+	public KubernetesLeaderElectionDriver createLeaderElectionDriver(
 			LeaderElectionEventHandler leaderEventHandler,
 			FatalErrorHandler fatalErrorHandler,
 			String leaderContenderDescription) {

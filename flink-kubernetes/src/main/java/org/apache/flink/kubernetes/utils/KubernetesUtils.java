@@ -172,6 +172,9 @@ public class KubernetesUtils {
 		final String leaderAddress = configMap.getData().get(LEADER_ADDRESS_KEY);
 		final String sessionIDStr = configMap.getData().get(LEADER_SESSION_ID_KEY);
 		final UUID sessionID = sessionIDStr == null ? null : UUID.fromString(sessionIDStr);
+		if (leaderAddress == null && sessionIDStr == null) {
+			return LeaderInformation.empty();
+		}
 		return LeaderInformation.known(sessionID, leaderAddress);
 	}
 

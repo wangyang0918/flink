@@ -18,6 +18,7 @@
 
 package org.apache.flink.kubernetes.highavailability;
 
+import org.apache.flink.core.testutils.FlinkMatchers;
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
 import org.apache.flink.kubernetes.utils.Constants;
@@ -26,7 +27,6 @@ import org.junit.Test;
 
 import java.util.Collections;
 
-import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.Assert.assertThat;
@@ -47,7 +47,8 @@ public class KubernetesLeaderRetrievalDriverTest extends KubernetesHighAvailabil
 						getLeaderRetrievalConfigMapCallback();
 					callbackHandler.onError(Collections.singletonList(getLeaderConfigMap()));
 					final String errMsg = "Error while watching the ConfigMap " + LEADER_CONFIGMAP_NAME;
-					assertThat(retrievalEventHandler.getError().getMessage(), containsString(errMsg));
+					retrievalEventHandler.waitForError(TIMEOUT);
+					assertThat(retrievalEventHandler.getError(), FlinkMatchers.containsMessage(errMsg));
 				});
 		}};
 	}
