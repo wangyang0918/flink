@@ -78,8 +78,8 @@ public class TestingLeaderElectionDriver implements LeaderElectionDriver {
 		leaderElectionEventHandler.onLeaderInformationChange(newLeader);
 	}
 
-	public FatalErrorHandler getFatalErrorHandler() {
-		return fatalErrorHandler;
+	public void onFatalError(Throwable throwable) {
+		fatalErrorHandler.onFatalError(throwable);
 	}
 
 	/**

@@ -31,10 +31,12 @@ public interface LeaderElectionDriver {
 
 	/**
 	 * Write the current leader information to external persistent storage(e.g. Zookeeper, Kubernetes ConfigMap). This
-	 * is a blocking IO operation.
+	 * is a blocking IO operation. The write operation takes effect only when the driver still has the leadership.
 	 *
 	 * @param leaderInformation current leader information. It could be {@link LeaderInformation#empty()}, which means
-	 * the caller want to clear the leader information on external storage.
+	 * the caller want to clear the leader information on external storage. Please remember that the clear operation
+	 * should only happen before a new leader is elected and has written his leader information on the storage.
+	 * Otherwise, we may have a risk to wrongly update the storage with empty leader information.
 	 */
 	void writeLeaderInformation(LeaderInformation leaderInformation);
 

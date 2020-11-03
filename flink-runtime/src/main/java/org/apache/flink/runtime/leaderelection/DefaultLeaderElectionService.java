@@ -29,7 +29,6 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 
-import java.util.Objects;
 import java.util.UUID;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
@@ -47,7 +46,6 @@ public class DefaultLeaderElectionService implements LeaderElectionService, Lead
 	private final LeaderElectionDriverFactory leaderElectionDriverFactory;
 
 	/** The leader contender which applies for leadership. */
-	@GuardedBy("lock")
 	private volatile LeaderContender leaderContender;
 
 	@GuardedBy("lock")
@@ -195,15 +193,16 @@ public class DefaultLeaderElectionService implements LeaderElectionService, Lead
 						leaderContender.getDescription(),
 						issuedLeaderSessionID);
 				}
-
-				leaderContender.grantLeadership(issuedLeaderSessionID);
 			} else {
 				if (LOG.isDebugEnabled()) {
 					LOG.debug("Ignoring the grant leadership notification since the {} has " +
 						"already been closed.", leaderElectionDriver);
 				}
+				return;
 			}
 		}
+		// The contender callback should be executed out of lock to avoid potential deadlock.
+		leaderContender.grantLeadership(issuedLeaderSessionID);
 	}
 
 	@Override
@@ -222,8 +221,6 @@ public class DefaultLeaderElectionService implements LeaderElectionService, Lead
 				issuedLeaderSessionID = null;
 				clearConfirmedLeaderInformation();
 
-				leaderContender.revokeLeadership();
-
 				// Clear the old leader information on the external storage
 				leaderElectionDriver.writeLeaderInformation(LeaderInformation.empty());
 			} else {
@@ -231,8 +228,11 @@ public class DefaultLeaderElectionService implements LeaderElectionService, Lead
 					LOG.debug("Ignoring the revoke leadership notification since the {} " +
 						"has already been closed.", leaderElectionDriver);
 				}
+				return;
 			}
 		}
+		// The contender callback should be executed out of lock to avoid potential deadlock.
+		leaderContender.revokeLeadership();
 	}
 
 	@Override
@@ -247,18 +247,15 @@ public class DefaultLeaderElectionService implements LeaderElectionService, Lead
 						confirmedLeaderSessionID);
 				}
 				if (confirmedLeaderSessionID != null) {
-					final UUID leaderSessionID = leaderInformation.getLeaderSessionID();
-					final String leaderAddress = leaderInformation.getLeaderAddress();
 					final LeaderInformation confirmedLeaderInfo = LeaderInformation.known(
 						confirmedLeaderSessionID, confirmedLeaderAddress);
-					if (leaderSessionID == null && leaderAddress == null) {
+					if (leaderInformation.isEmpty()) {
 						if (LOG.isDebugEnabled()) {
 							LOG.debug("Writing leader information by {} since the external storage is empty.",
 								leaderContender.getDescription());
 						}
 						leaderElectionDriver.writeLeaderInformation(confirmedLeaderInfo);
-					} else if (!Objects.equals(leaderAddress, confirmedLeaderAddress) ||
-						!Objects.equals(leaderSessionID, confirmedLeaderSessionID)) {
+					} else if (!leaderInformation.equals(confirmedLeaderInfo)) {
 						// the data field does not correspond to the expected leader information
 						if (LOG.isDebugEnabled()) {
 							LOG.debug("Correcting leader information by {}.", leaderContender.getDescription());
@@ -280,17 +277,19 @@ public class DefaultLeaderElectionService implements LeaderElectionService, Lead
 		@Override
 		public void onFatalError(Throwable throwable) {
 			synchronized (lock) {
-				if (running) {
-					if (throwable instanceof LeaderElectionException) {
-						leaderContender.handleError((LeaderElectionException) throwable);
-					} else {
-						leaderContender.handleError(new LeaderElectionException(throwable));
-					}
-				} else {
+				if (!running) {
 					if (LOG.isDebugEnabled()) {
 						LOG.debug("Ignoring error notification since the service has been stopped.");
 					}
+					return;
 				}
+			}
+
+			// The contender callback should be executed out of lock to avoid potential deadlock.
+			if (throwable instanceof LeaderElectionException) {
+				leaderContender.handleError((LeaderElectionException) throwable);
+			} else {
+				leaderContender.handleError(new LeaderElectionException(throwable));
 			}
 		}
 	}

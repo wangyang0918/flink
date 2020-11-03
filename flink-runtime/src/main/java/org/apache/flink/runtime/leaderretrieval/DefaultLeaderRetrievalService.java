@@ -58,7 +58,6 @@ public class DefaultLeaderRetrievalService implements LeaderRetrievalService, Le
 	private volatile boolean running;
 
 	/** Listener which will be notified about leader changes. */
-	@GuardedBy("lock")
 	private volatile LeaderRetrievalListener leaderListener;
 
 	@GuardedBy("lock")
@@ -135,7 +134,6 @@ public class DefaultLeaderRetrievalService implements LeaderRetrievalService, Le
 
 					lastLeaderAddress = newLeaderAddress;
 					lastLeaderSessionID = newLeaderSessionID;
-					leaderListener.notifyLeaderAddress(newLeaderAddress, newLeaderSessionID);
 				}
 			} else {
 				if (LOG.isDebugEnabled()) {
@@ -143,6 +141,9 @@ public class DefaultLeaderRetrievalService implements LeaderRetrievalService, Le
 				}
 			}
 		}
+
+		// The listener callback should be executed out of lock to avoid potential deadlock.
+		leaderListener.notifyLeaderAddress(newLeaderAddress, newLeaderSessionID);
 	}
 
 	private class LeaderRetrievalFatalErrorHandler implements FatalErrorHandler {
@@ -150,16 +151,18 @@ public class DefaultLeaderRetrievalService implements LeaderRetrievalService, Le
 		@Override
 		public void onFatalError(Throwable throwable) {
 			synchronized (lock) {
-				if (running) {
-					if (throwable instanceof LeaderRetrievalException) {
-						leaderListener.handleError((LeaderRetrievalException) throwable);
-					} else {
-						leaderListener.handleError(new LeaderRetrievalException(throwable));
-					}
-				} else {
+				if (!running) {
 					if (LOG.isDebugEnabled()) {
 						LOG.debug("Ignoring error notification since the service has been stopped.");
 					}
+					return;
+				}
+
+				// The listener callback should be executed out of lock to avoid potential deadlock.
+				if (throwable instanceof LeaderRetrievalException) {
+					leaderListener.handleError((LeaderRetrievalException) throwable);
+				} else {
+					leaderListener.handleError(new LeaderRetrievalException(throwable));
 				}
 			}
 		}

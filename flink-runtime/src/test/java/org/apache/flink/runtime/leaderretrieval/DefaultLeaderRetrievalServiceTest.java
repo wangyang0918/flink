@@ -18,6 +18,7 @@
 
 package org.apache.flink.runtime.leaderretrieval;
 
+import org.apache.flink.core.testutils.FlinkMatchers;
 import org.apache.flink.runtime.leaderelection.DefaultLeaderElectionService;
 import org.apache.flink.runtime.leaderelection.LeaderInformation;
 import org.apache.flink.runtime.leaderelection.TestingListener;
@@ -27,12 +28,13 @@ import org.apache.flink.util.function.RunnableWithException;
 import org.junit.Test;
 
 import java.util.UUID;
+import java.util.concurrent.TimeoutException;
 
-import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.Assert.assertThat;
+import static org.junit.Assert.fail;
 
 /**
  * Tests for {@link DefaultLeaderElectionService}.
@@ -40,7 +42,7 @@ import static org.junit.Assert.assertThat;
 public class DefaultLeaderRetrievalServiceTest extends TestLogger {
 
 	private static final String TEST_URL = "akka//user/jobmanager";
-	private static final long timeout = 30L * 1000L;
+	private static final long timeout = 50L;
 
 	@Test
 	public void testNotifyLeaderAddress() throws Exception {
@@ -75,24 +77,31 @@ public class DefaultLeaderRetrievalServiceTest extends TestLogger {
 	public void testErrorForwarding() throws Exception {
 		new Context() {{
 			runTest(() -> {
-				final Exception testException = new Exception("test Exeption");
+				final Exception testException = new Exception("test exception");
 
-				testingLeaderRetrievalDriver.getFatalErrorHandler().onFatalError(testException);
+				testingLeaderRetrievalDriver.onFatalError(testException);
 
-				assertThat(testingListener.getError().getMessage(), containsString(testException.getMessage()));
+				testingListener.waitForError(timeout);
+				assertThat(testingListener.getError(), FlinkMatchers.containsCause(testException));
 			});
 		}};
 	}
 
 	@Test
-	public void testErrorHappenAfterStop() throws Exception {
+	public void testErrorIsIgnoredAfterBeingStop() throws Exception {
 		new Context() {{
 			runTest(() -> {
-				final Exception testException = new Exception("test Exeption");
+				final Exception testException = new Exception("test exception");
 
 				leaderRetrievalService.stop();
-				testingLeaderRetrievalDriver.getFatalErrorHandler().onFatalError(testException);
+				testingLeaderRetrievalDriver.onFatalError(testException);
 
+				try {
+					testingListener.waitForError(timeout);
+					fail("We expect to have a timeout here because there's no error should be passed to listener.");
+				} catch (TimeoutException ex) {
+					// noop
+				}
 				assertThat(testingListener.getError(), is(nullValue()));
 			});
 		}};

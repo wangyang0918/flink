@@ -47,14 +47,14 @@ public class TestingLeaderElectionEventHandler extends TestingLeaderBase impleme
 		}
 		confirmedLeaderInformation = leaderInformation;
 		leaderElectionDriver.writeLeaderInformation(confirmedLeaderInformation);
-		leaderQueue.offer(confirmedLeaderInformation);
+		leaderEventQueue.offer(confirmedLeaderInformation);
 	}
 
 	@Override
 	public void onRevokeLeadership() {
 		confirmedLeaderInformation = LeaderInformation.empty();
 		leaderElectionDriver.writeLeaderInformation(confirmedLeaderInformation);
-		revokeQueue.offer(confirmedLeaderInformation);
+		leaderEventQueue.offer(confirmedLeaderInformation);
 	}
 
 	@Override
@@ -63,10 +63,6 @@ public class TestingLeaderElectionEventHandler extends TestingLeaderBase impleme
 			!this.confirmedLeaderInformation.equals(leaderInformation)) {
 			leaderElectionDriver.writeLeaderInformation(confirmedLeaderInformation);
 		}
-	}
-
-	public void handleError(Throwable ex) {
-		errorQueue.offer(ex);
 	}
 
 	public LeaderInformation getConfirmedLeaderInformation() {

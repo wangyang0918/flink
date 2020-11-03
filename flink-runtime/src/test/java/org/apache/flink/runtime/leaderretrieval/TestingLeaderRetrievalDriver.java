@@ -47,8 +47,8 @@ public class TestingLeaderRetrievalDriver implements LeaderRetrievalDriver {
 		leaderRetrievalEventHandler.notifyLeaderAddress(newLeader);
 	}
 
-	public FatalErrorHandler getFatalErrorHandler() {
-		return fatalErrorHandler;
+	public void onFatalError(Throwable throwable) {
+		fatalErrorHandler.onFatalError(throwable);
 	}
 
 	/**
