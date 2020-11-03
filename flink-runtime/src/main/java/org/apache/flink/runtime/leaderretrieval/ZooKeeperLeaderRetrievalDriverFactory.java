@@ -37,7 +37,7 @@ public class ZooKeeperLeaderRetrievalDriverFactory implements LeaderRetrievalDri
 	}
 
 	@Override
-	public LeaderRetrievalDriver createLeaderRetrievalDriver(
+	public ZooKeeperLeaderRetrievalDriver createLeaderRetrievalDriver(
 			LeaderRetrievalEventHandler leaderEventHandler,
 			FatalErrorHandler fatalErrorHandler) throws Exception {
 		return new ZooKeeperLeaderRetrievalDriver(client, retrievalPath, leaderEventHandler, fatalErrorHandler);

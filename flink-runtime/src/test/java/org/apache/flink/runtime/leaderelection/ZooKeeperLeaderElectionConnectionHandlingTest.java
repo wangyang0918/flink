@@ -24,6 +24,7 @@ import org.apache.flink.configuration.HighAvailabilityOptions;
 import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalDriver;
 import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalEventHandler;
 import org.apache.flink.runtime.leaderretrieval.ZooKeeperLeaderRetrievalDriver;
+import org.apache.flink.runtime.rpc.DirectlyFailingFatalErrorHandler;
 import org.apache.flink.runtime.rpc.FatalErrorHandler;
 import org.apache.flink.runtime.testutils.CommonTestUtils;
 import org.apache.flink.runtime.util.ZooKeeperUtils;
@@ -62,10 +63,7 @@ public class ZooKeeperLeaderElectionConnectionHandlingTest extends TestLogger {
 
 	private CuratorFramework zooKeeperClient;
 
-	private final FatalErrorHandler fatalErrorHandler = throwable -> {
-		throw new UnsupportedOperationException(
-			"handleError(Exception) shouldn't have been called, but it was triggered anyway.", throwable);
-	};
+	private final FatalErrorHandler fatalErrorHandler = DirectlyFailingFatalErrorHandler.INSTANCE;
 
 	@Before
 	public void before() throws Exception {

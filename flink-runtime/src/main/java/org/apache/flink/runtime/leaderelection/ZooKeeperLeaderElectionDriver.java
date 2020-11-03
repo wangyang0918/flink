@@ -104,6 +104,8 @@ public class ZooKeeperLeaderElectionDriver implements LeaderElectionDriver, Lead
 
 		client.getUnhandledErrorListenable().addListener(this);
 
+		running = true;
+
 		leaderLatch.addListener(this);
 		leaderLatch.start();
 
@@ -111,8 +113,6 @@ public class ZooKeeperLeaderElectionDriver implements LeaderElectionDriver, Lead
 		cache.start();
 
 		client.getConnectionStateListenable().addListener(listener);
-
-		running = true;
 	}
 
 	@Override
@@ -197,9 +197,10 @@ public class ZooKeeperLeaderElectionDriver implements LeaderElectionDriver, Lead
 		if (LOG.isDebugEnabled()) {
 			LOG.debug("Write leader information: {}.", leaderInformation);
 		}
-		if (leaderInformation.equals(LeaderInformation.empty())) {
+		if (leaderInformation.isEmpty()) {
 			return;
 		}
+
 		try {
 			final ByteArrayOutputStream baos = new ByteArrayOutputStream();
 			final ObjectOutputStream oos = new ObjectOutputStream(baos);

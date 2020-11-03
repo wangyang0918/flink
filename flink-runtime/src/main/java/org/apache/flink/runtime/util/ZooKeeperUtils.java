@@ -208,7 +208,7 @@ public class ZooKeeperUtils {
 	 * @param configuration {@link Configuration} object containing the configuration values
 	 * @return {@link LeaderRetrievalDriverFactory} instance.
 	 */
-	public static LeaderRetrievalDriverFactory createLeaderRetrievalDriverFactory(
+	public static ZooKeeperLeaderRetrievalDriverFactory createLeaderRetrievalDriverFactory(
 			final CuratorFramework client,
 			final Configuration configuration) {
 		return createLeaderRetrievalDriverFactory(client, configuration, "");
@@ -221,7 +221,7 @@ public class ZooKeeperUtils {
 	 * @param pathSuffix    The path suffix which we want to append
 	 * @return {@link LeaderRetrievalDriverFactory} instance.
 	 */
-	public static LeaderRetrievalDriverFactory createLeaderRetrievalDriverFactory(
+	public static ZooKeeperLeaderRetrievalDriverFactory createLeaderRetrievalDriverFactory(
 			final CuratorFramework client,
 			final Configuration configuration,
 			final String pathSuffix) {
@@ -267,7 +267,7 @@ public class ZooKeeperUtils {
 	 * @param configuration {@link Configuration} object containing the configuration values
 	 * @return {@link LeaderElectionDriverFactory} instance.
 	 */
-	public static LeaderElectionDriverFactory createLeaderElectionDriverFactory(
+	public static ZooKeeperLeaderElectionDriverFactory createLeaderElectionDriverFactory(
 			final CuratorFramework client,
 			final Configuration configuration) {
 		return createLeaderElectionDriverFactory(client, configuration, "");
@@ -281,7 +281,7 @@ public class ZooKeeperUtils {
 	 * @param pathSuffix    The path suffix which we want to append
 	 * @return {@link LeaderElectionDriverFactory} instance.
 	 */
-	public static LeaderElectionDriverFactory createLeaderElectionDriverFactory(
+	public static ZooKeeperLeaderElectionDriverFactory createLeaderElectionDriverFactory(
 			final CuratorFramework client,
 			final Configuration configuration,
 			final String pathSuffix) {
