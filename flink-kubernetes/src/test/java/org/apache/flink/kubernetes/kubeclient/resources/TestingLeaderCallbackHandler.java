@@ -18,36 +18,43 @@
 
 package org.apache.flink.kubernetes.kubeclient.resources;
 
-import java.util.concurrent.BlockingQueue;
+import org.apache.flink.api.common.time.Deadline;
+import org.apache.flink.runtime.testutils.CommonTestUtils;
 
-import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertThat;
+import java.time.Duration;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Testing implementation for {@link KubernetesLeaderElector.LeaderCallbackHandler}.
  */
 public class TestingLeaderCallbackHandler extends KubernetesLeaderElector.LeaderCallbackHandler {
 
-	private final BlockingQueue<String> leaderStore;
+	private static final BlockingQueue<String> sharedQueue = new LinkedBlockingQueue<>();
+
+	private final BlockingQueue<String> leaderQueue = new LinkedBlockingQueue<>();
+	private final BlockingQueue<String> revokeQueue = new LinkedBlockingQueue<>();
 	private final String lockIdentity;
+
 	private boolean isLeader;
 
-	public TestingLeaderCallbackHandler(BlockingQueue<String> leaderStore, String lockIdentity) {
-		this.leaderStore = leaderStore;
+	public TestingLeaderCallbackHandler(String lockIdentity) {
 		this.lockIdentity = lockIdentity;
 	}
 
 	@Override
 	public void isLeader() {
 		isLeader = true;
-		leaderStore.poll();
-		leaderStore.offer(lockIdentity);
-		assertThat(leaderStore.size(), is(1));
+		leaderQueue.offer(lockIdentity);
+		sharedQueue.offer(lockIdentity);
 	}
 
 	@Override
 	public void notLeader() {
 		isLeader = false;
+		revokeQueue.offer(lockIdentity);
 	}
 
 	public String getLockIdentity() {
@@ -56,5 +63,38 @@ public class TestingLeaderCallbackHandler extends KubernetesLeaderElector.Leader
 
 	public boolean hasLeadership() {
 		return isLeader;
+	}
+
+	public static String waitUntilNewLeaderAppears(long timeout) throws Exception {
+		final AtomicReference<String> leaderRef = new AtomicReference<>();
+		CommonTestUtils.waitUntilCondition(
+			() -> {
+				final String lockIdentity = sharedQueue.poll(timeout, TimeUnit.MILLISECONDS);
+				leaderRef.set(lockIdentity);
+				return lockIdentity != null;
+			},
+			Deadline.fromNow(Duration.ofMillis(timeout)),
+			"No leader is elected with " + timeout + "ms");
+		return leaderRef.get();
+	}
+
+	public void waitForNewLeader(long timeout) throws Exception {
+		final String errorMsg = "No leader with " + lockIdentity + " is elected within " + timeout + "ms";
+		poll(leaderQueue, timeout, errorMsg);
+	}
+
+	public void waitForRevokeLeader(long timeout) throws Exception {
+		final String errorMsg = "No leader with " + lockIdentity + " is revoke within " + timeout + "ms";
+		poll(revokeQueue, timeout, errorMsg);
+	}
+
+	private void poll(BlockingQueue<String> queue, long timeout, String errorMsg) throws Exception {
+		CommonTestUtils.waitUntilCondition(
+			() -> {
+				final String lockIdentity = queue.poll(timeout, TimeUnit.MILLISECONDS);
+				return this.lockIdentity.equals(lockIdentity);
+			},
+			Deadline.fromNow(Duration.ofMillis(timeout)),
+			errorMsg);
 	}
 }

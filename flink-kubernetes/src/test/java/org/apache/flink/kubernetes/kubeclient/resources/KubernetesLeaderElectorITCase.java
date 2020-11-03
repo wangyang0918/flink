@@ -24,15 +24,12 @@ import org.apache.flink.kubernetes.configuration.KubernetesLeaderElectionConfigu
 import org.apache.flink.kubernetes.kubeclient.DefaultKubeClientFactory;
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
 import org.apache.flink.kubernetes.kubeclient.KubeClientFactory;
+import org.apache.flink.util.TestLogger;
 
 import org.junit.ClassRule;
 import org.junit.Test;
 
 import java.util.UUID;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
@@ -42,7 +39,7 @@ import static org.junit.Assert.assertThat;
  * IT Tests for the {@link KubernetesLeaderElector}. Start multiple leader contenders currently, one should elect
  * successfully. And if current leader dies, a new one could take over.
  */
-public class KubernetesLeaderElectorITCase {
+public class KubernetesLeaderElectorITCase extends TestLogger {
 
 	@ClassRule
 	public static KubernetesResource kubernetesResource = new KubernetesResource();
@@ -56,9 +53,7 @@ public class KubernetesLeaderElectorITCase {
 	@Test
 	public void testMultipleKubernetesLeaderElectors() throws Exception {
 		final Configuration configuration = kubernetesResource.getConfiguration();
-		final ExecutorService executorService = kubernetesResource.getExecutorService();
 
-		final BlockingQueue<String> leaderStore = new LinkedBlockingQueue<>();
 		final String leaderConfigMapName = LEADER_CONFIGMAP_NAME_PREFIX + System.currentTimeMillis();
 		final int leaderNum = 3;
 
@@ -69,8 +64,8 @@ public class KubernetesLeaderElectorITCase {
 
 		try {
 			for (int i = 0; i < leaderNum; i++) {
-				kubeClients[i] = kubeClientFactory.fromConfiguration(configuration, executorService);
-				leaderCallbackHandlers[i] = new TestingLeaderCallbackHandler(leaderStore, UUID.randomUUID().toString());
+				kubeClients[i] = kubeClientFactory.fromConfiguration(configuration);
+				leaderCallbackHandlers[i] = new TestingLeaderCallbackHandler(UUID.randomUUID().toString());
 				final KubernetesLeaderElectionConfiguration leaderConfig = new KubernetesLeaderElectionConfiguration(
 					leaderConfigMapName, leaderCallbackHandlers[i].getLockIdentity(), configuration);
 				leaderElectors[i] = kubeClients[i].createLeaderElector(leaderConfig, leaderCallbackHandlers[i]);
@@ -80,21 +75,25 @@ public class KubernetesLeaderElectorITCase {
 			}
 
 			// Wait for the first leader
-			final String firstLockIdentity = leaderStore.poll(TIMEOUT, TimeUnit.MILLISECONDS);
+			final String firstLockIdentity = TestingLeaderCallbackHandler.waitUntilNewLeaderAppears(TIMEOUT);
 
 			for (int i = 0; i < leaderNum; i++) {
 				if (leaderCallbackHandlers[i].getLockIdentity().equals(firstLockIdentity)) {
-					// Check the callback is called.
+					// Check the callback isLeader is called.
+					leaderCallbackHandlers[i].waitForNewLeader(TIMEOUT);
 					assertThat(leaderCallbackHandlers[i].hasLeadership(), is(true));
 					// Current leader died
 					leaderElectors[i].stop();
+					// Check the callback notLeader is called.
+					leaderCallbackHandlers[i].waitForRevokeLeader(TIMEOUT);
+					assertThat(leaderCallbackHandlers[i].hasLeadership(), is(false));
 				} else {
 					assertThat(leaderCallbackHandlers[i].hasLeadership(), is(false));
 				}
 			}
 
 			// Another leader should be elected successfully and update the lock identity
-			final String anotherLockIdentity = leaderStore.poll(TIMEOUT, TimeUnit.MILLISECONDS);
+			final String anotherLockIdentity = TestingLeaderCallbackHandler.waitUntilNewLeaderAppears(TIMEOUT);
 			assertThat(anotherLockIdentity, is(not(firstLockIdentity)));
 		} finally {
 			// Cleanup the resources

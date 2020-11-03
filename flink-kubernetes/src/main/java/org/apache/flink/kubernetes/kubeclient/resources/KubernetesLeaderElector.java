@@ -24,13 +24,13 @@ import org.apache.flink.runtime.util.ExecutorThreadFactory;
 
 import io.fabric8.kubernetes.client.NamespacedKubernetesClient;
 import io.fabric8.kubernetes.client.extended.leaderelection.LeaderCallbacks;
+import io.fabric8.kubernetes.client.extended.leaderelection.LeaderElectionConfig;
 import io.fabric8.kubernetes.client.extended.leaderelection.LeaderElectionConfigBuilder;
 import io.fabric8.kubernetes.client.extended.leaderelection.LeaderElector;
 import io.fabric8.kubernetes.client.extended.leaderelection.resourcelock.ConfigMapLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -46,7 +46,7 @@ import java.util.concurrent.Executors;
  *   annotations:
  *     control-plane.alpha.kubernetes.io/leader: '{"holderIdentity":"623e39fb-70c3-44f1-811f-561ec4a28d75","leaseDuration":15.000000000,"acquireTime":"2020-10-20T04:06:31.431000Z","renewTime":"2020-10-22T08:51:36.843000Z","leaderTransitions":37981}'
  */
-public class KubernetesLeaderElector extends LeaderElector<NamespacedKubernetesClient> {
+public class KubernetesLeaderElector {
 
 	private static final Logger LOG = LoggerFactory.getLogger(KubernetesLeaderElector.class);
 	@VisibleForTesting
@@ -55,12 +55,14 @@ public class KubernetesLeaderElector extends LeaderElector<NamespacedKubernetesC
 	private final ExecutorService executorService = Executors.newSingleThreadExecutor(
 		new ExecutorThreadFactory("KubernetesLeaderElector-ExecutorService"));
 
+	private final LeaderElector<NamespacedKubernetesClient> internalLeaderElector;
+
 	public KubernetesLeaderElector(
 			NamespacedKubernetesClient kubernetesClient,
 			String namespace,
 			KubernetesLeaderElectionConfiguration leaderConfig,
 			LeaderCallbackHandler leaderCallbackHandler) {
-		super(kubernetesClient, new LeaderElectionConfigBuilder()
+		final LeaderElectionConfig leaderElectionConfig = new LeaderElectionConfigBuilder()
 			.withName(leaderConfig.getConfigMapName())
 			.withLeaseDuration(leaderConfig.getLeaseDuration())
 			.withLock(new ConfigMapLock(namespace, leaderConfig.getConfigMapName(), leaderConfig.getLockIdentity()))
@@ -71,14 +73,14 @@ public class KubernetesLeaderElector extends LeaderElector<NamespacedKubernetesC
 				leaderCallbackHandler::notLeader,
 				newLeader -> LOG.info("New leader elected {} for {}.", newLeader, leaderConfig.getConfigMapName())
 			))
-			.build());
+			.build();
+		internalLeaderElector = new LeaderElector<>(kubernetesClient, leaderElectionConfig);
 		LOG.info("Create KubernetesLeaderElector {} with lock identity {}.",
 			leaderConfig.getConfigMapName(), leaderConfig.getLockIdentity());
 	}
 
-	@Override
 	public void run() {
-		CompletableFuture.runAsync(super::run, executorService);
+		executorService.submit(internalLeaderElector::run);
 	}
 
 	public void stop() {
