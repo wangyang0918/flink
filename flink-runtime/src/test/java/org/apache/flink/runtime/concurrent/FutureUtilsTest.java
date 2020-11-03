@@ -19,6 +19,7 @@
 package org.apache.flink.runtime.concurrent;
 
 import org.apache.flink.api.common.time.Time;
+import org.apache.flink.core.testutils.FlinkMatchers;
 import org.apache.flink.core.testutils.OneShotLatch;
 import org.apache.flink.runtime.messages.Acknowledge;
 import org.apache.flink.runtime.testingUtils.TestingUtils;
@@ -169,13 +170,13 @@ public class FutureUtilsTest extends TestLogger {
 		final int retries = 10;
 		final int notRetry = 3;
 		final AtomicInteger atomicInteger = new AtomicInteger(0);
-		final String notRetryExceptionMsg = "Non-retryable exception";
+		final FlinkRuntimeException nonRetryableException = new FlinkRuntimeException("Non-retryable exception");
 		CompletableFuture<Boolean> retryFuture = FutureUtils.retry(
 			() -> CompletableFuture.supplyAsync(
 				() -> {
 					if (atomicInteger.incrementAndGet() == notRetry) {
 						// throw non-retryable exception
-						throw new CompletionException(new FlinkRuntimeException(notRetryExceptionMsg));
+						throw new CompletionException(nonRetryableException);
 					} else {
 						throw new CompletionException(new FlinkException("Test exception"));
 					}
@@ -189,7 +190,7 @@ public class FutureUtilsTest extends TestLogger {
 			retryFuture.get();
 			fail("Exception should be thrown.");
 		} catch (Exception ex) {
-			assertThat(ExceptionUtils.findThrowableWithMessage(ex, notRetryExceptionMsg).isPresent(), is(true));
+			assertThat(ex, FlinkMatchers.containsCause(nonRetryableException));
 		}
 		assertThat(atomicInteger.get(), is(notRetry));
 	}
