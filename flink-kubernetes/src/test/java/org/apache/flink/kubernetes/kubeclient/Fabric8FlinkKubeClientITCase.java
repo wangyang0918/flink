@@ -21,6 +21,8 @@ package org.apache.flink.kubernetes.kubeclient;
 import org.apache.flink.kubernetes.KubernetesResource;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesConfigMap;
 import org.apache.flink.runtime.concurrent.FutureUtils;
+import org.apache.flink.runtime.util.ExecutorThreadFactory;
+import org.apache.flink.util.TestLogger;
 
 import io.fabric8.kubernetes.api.model.ConfigMapBuilder;
 import org.junit.After;
@@ -34,6 +36,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.Matchers.everyItem;
@@ -43,7 +47,7 @@ import static org.junit.Assert.assertThat;
 /**
  * IT Tests for {@link org.apache.flink.kubernetes.kubeclient.Fabric8FlinkKubeClient} with real K8s server and client.
  */
-public class Fabric8FlinkKubeClientITCase {
+public class Fabric8FlinkKubeClientITCase extends TestLogger {
 
 	@ClassRule
 	public static KubernetesResource kubernetesResource = new KubernetesResource();
@@ -62,6 +66,8 @@ public class Fabric8FlinkKubeClientITCase {
 
 	private FlinkKubeClient flinkKubeClient;
 
+	private ExecutorService executorService;
+
 	@Before
 	public void setup() throws Exception {
 		flinkKubeClient = kubernetesResource.getFlinkKubeClient();
@@ -72,10 +78,12 @@ public class Fabric8FlinkKubeClientITCase {
 				.endMetadata()
 				.withData(data)
 				.build())).get();
+		executorService = Executors.newFixedThreadPool(data.size(), new ExecutorThreadFactory("test-leader-io"));
 	}
 
 	@After
 	public void teardown() throws Exception {
+		executorService.shutdownNow();
 		flinkKubeClient.deleteConfigMap(TEST_CONFIG_MAP_NAME).get();
 	}
 
@@ -107,7 +115,7 @@ public class Fabric8FlinkKubeClientITCase {
 						// noop
 					}
 				}
-			}, kubernetesResource.getExecutorService()));
+			}, executorService));
 		}
 		FutureUtils.waitForAll(futures).get(TIMEOUT, TimeUnit.MILLISECONDS);
 		// All the value should be increased exactly to the target

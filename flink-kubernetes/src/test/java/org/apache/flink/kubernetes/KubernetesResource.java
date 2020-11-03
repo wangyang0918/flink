@@ -90,8 +90,4 @@ public class KubernetesResource extends ExternalResource {
 	public FlinkKubeClient getFlinkKubeClient() {
 		return flinkKubeClient;
 	}
-
-	public ExecutorService getExecutorService() {
-		return executorService;
-	}
 }
