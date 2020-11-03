@@ -18,13 +18,18 @@
 
 package org.apache.flink.runtime.leaderelection;
 
+import org.apache.flink.api.common.time.Deadline;
 import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalListener;
+import org.apache.flink.runtime.testutils.CommonTestUtils;
+import org.apache.flink.util.ExceptionUtils;
 
+import javax.annotation.Nullable;
+
+import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 /**
  * Base class which provides some convenience functions for testing purposes of {@link LeaderRetrievalListener} and
@@ -32,59 +37,90 @@ import java.util.concurrent.TimeoutException;
  */
 public class TestingRetrievalBase {
 
-	private final BlockingQueue<LeaderInformation> leaderQueue = new LinkedBlockingQueue<>();
+	private final BlockingQueue<LeaderInformation> leaderEventQueue = new LinkedBlockingQueue<>();
+	private final BlockingQueue<Throwable> errorQueue = new LinkedBlockingQueue<>();
 
-	private String address;
+	private LeaderInformation leader = LeaderInformation.empty();
 	private String oldAddress;
-	private UUID leaderSessionID;
-	private Exception exception;
+	private Throwable error;
 
 	public String waitForNewLeader(long timeout) throws Exception {
-		final LeaderInformation leader = leaderQueue.poll(timeout, TimeUnit.MILLISECONDS);
+		throwExceptionIfNotNull();
 
-		if (exception != null) {
-			throw exception;
-		} else if (leader == null || leader.getLeaderAddress() == null ||
-			leader.getLeaderAddress().equals(oldAddress)) {
-			throw new TimeoutException("Listener was not notified about a new leader within " + timeout + "ms");
-		}
+		final String errorMsg = "Listener was not notified about a new leader within " + timeout + "ms";
+		CommonTestUtils.waitUntilCondition(
+			() -> {
+				leader = leaderEventQueue.poll(timeout, TimeUnit.MILLISECONDS);
+				return leader != null && !leader.isEmpty() && !leader.getLeaderAddress().equals(oldAddress);
+			},
+			Deadline.fromNow(Duration.ofMillis(timeout)),
+			errorMsg);
 
-		address = leader.getLeaderAddress();
-		leaderSessionID = leader.getLeaderSessionID();
 		oldAddress = leader.getLeaderAddress();
 
-		return address;
+		return leader.getLeaderAddress();
 	}
 
 	public void waitForEmptyLeaderInformation(long timeout) throws Exception {
-		final LeaderInformation leader = leaderQueue.poll(timeout, TimeUnit.MILLISECONDS);
+		throwExceptionIfNotNull();
 
-		if (exception != null) {
-			throw exception;
-		} else if (leader == null || !leader.equals(LeaderInformation.empty())) {
-			throw new TimeoutException("Listener was not notified about an empty leader within " + timeout + "ms");
-		}
+		final String errorMsg = "Listener was not notified about an empty leader within " + timeout + "ms";
+		CommonTestUtils.waitUntilCondition(
+			() -> {
+				leader = leaderEventQueue.poll(timeout, TimeUnit.MILLISECONDS);
+				return leader != null && leader.isEmpty();
+			},
+			Deadline.fromNow(Duration.ofMillis(timeout)),
+			errorMsg);
+
+		oldAddress = null;
 	}
 
-	public void handleError(Throwable throwable) {
-		this.exception = new Exception(throwable);
+	public void waitForError(long timeout) throws Exception {
+		final String errorMsg = "Listener did not see an exception with " + timeout + "ms";
+		CommonTestUtils.waitUntilCondition(
+			() -> {
+				error = errorQueue.poll(timeout, TimeUnit.MILLISECONDS);
+				return error != null;
+			},
+			Deadline.fromNow(Duration.ofMillis(timeout)),
+			errorMsg);
+	}
+
+	public void handleError(Throwable ex) {
+		errorQueue.offer(ex);
+	}
+
+	public LeaderInformation getLeader() {
+		return leader;
 	}
 
 	public String getAddress() {
-		return address;
+		return leader.getLeaderAddress();
 	}
 
 	public UUID getLeaderSessionID() {
-		return leaderSessionID;
+		return leader.getLeaderSessionID();
 	}
 
 	public void offerToLeaderQueue(LeaderInformation leaderInformation) {
-		leaderQueue.offer(leaderInformation);
-		this.leaderSessionID = leaderInformation.getLeaderSessionID();
-		this.address = leaderInformation.getLeaderAddress();
+		leaderEventQueue.offer(leaderInformation);
+		this.leader = leaderInformation;
 	}
 
-	public Exception getError() {
-		return this.exception;
+	/**
+	 * Please use {@link #waitForError} before get the error.
+	 *
+	 * @return the error has been handled.
+	 */
+	@Nullable
+	public Throwable getError() {
+		return this.error;
+	}
+
+	private void throwExceptionIfNotNull() throws Exception {
+		if (error != null) {
+			ExceptionUtils.rethrowException(error);
+		}
 	}
 }

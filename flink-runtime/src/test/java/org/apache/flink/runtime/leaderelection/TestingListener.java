@@ -36,7 +36,11 @@ public class TestingListener extends TestingRetrievalBase implements LeaderRetri
 	@Override
 	public void notifyLeaderAddress(String leaderAddress, UUID leaderSessionID) {
 		LOG.debug("Notified about new leader address {} with session ID {}.", leaderAddress, leaderSessionID);
-		offerToLeaderQueue(LeaderInformation.known(leaderSessionID, leaderAddress));
+		if (leaderAddress == null && leaderSessionID == null) {
+			offerToLeaderQueue(LeaderInformation.empty());
+		} else {
+			offerToLeaderQueue(LeaderInformation.known(leaderSessionID, leaderAddress));
+		}
 	}
 
 	@Override

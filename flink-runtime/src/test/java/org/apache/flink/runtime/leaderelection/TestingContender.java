@@ -50,7 +50,7 @@ public class TestingContender extends TestingLeaderBase implements LeaderContend
 
 		leaderElectionService.confirmLeadership(leaderSessionID, address);
 
-		leaderQueue.offer(LeaderInformation.known(leaderSessionID, address));
+		leaderEventQueue.offer(LeaderInformation.known(leaderSessionID, address));
 	}
 
 	@Override
@@ -58,7 +58,7 @@ public class TestingContender extends TestingLeaderBase implements LeaderContend
 		LOG.debug("Was revoked leadership. Old session ID {}.", leaderSessionID);
 
 		leaderSessionID = null;
-		revokeQueue.offer(LeaderInformation.empty());
+		leaderEventQueue.offer(LeaderInformation.empty());
 	}
 
 	@Override
@@ -68,7 +68,7 @@ public class TestingContender extends TestingLeaderBase implements LeaderContend
 
 	@Override
 	public void handleError(Exception exception) {
-		errorQueue.offer(exception);
+		super.handleError(exception);
 	}
 
 	public UUID getLeaderSessionID() {

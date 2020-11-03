@@ -24,6 +24,8 @@ import java.io.Serializable;
 import java.util.Objects;
 import java.util.UUID;
 
+import static org.apache.flink.util.Preconditions.checkNotNull;
+
 /**
  * Information about leader including the confirmed leader session id and leader address.
  */
@@ -54,6 +56,10 @@ public class LeaderInformation implements Serializable {
 		return leaderAddress;
 	}
 
+	public boolean isEmpty() {
+		return this == EMPTY;
+	}
+
 	@Override
 	public boolean equals(Object obj) {
 		if (obj == this) {
@@ -74,8 +80,8 @@ public class LeaderInformation implements Serializable {
 		return result;
 	}
 
-	public static LeaderInformation known(@Nullable UUID leaderSessionID, @Nullable String leaderAddress) {
-		return new LeaderInformation(leaderSessionID, leaderAddress);
+	public static LeaderInformation known(UUID leaderSessionID, String leaderAddress) {
+		return new LeaderInformation(checkNotNull(leaderSessionID), checkNotNull(leaderAddress));
 	}
 
 	public static LeaderInformation empty() {
