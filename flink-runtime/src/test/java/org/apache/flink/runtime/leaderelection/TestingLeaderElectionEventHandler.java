@@ -18,7 +18,11 @@
 
 package org.apache.flink.runtime.leaderelection;
 
+import org.apache.flink.api.common.time.Deadline;
+import org.apache.flink.runtime.testutils.CommonTestUtils;
 import org.apache.flink.util.FlinkRuntimeException;
+
+import java.time.Duration;
 
 /**
  * {@link LeaderElectionEventHandler} implementation which provides some convenience functions for testing
@@ -27,6 +31,8 @@ import org.apache.flink.util.FlinkRuntimeException;
 public class TestingLeaderElectionEventHandler extends TestingLeaderBase implements LeaderElectionEventHandler {
 
 	private final LeaderInformation leaderInformation;
+
+	private final Duration timeout = Duration.ofMillis(120 * 1000);
 
 	private LeaderInformation confirmedLeaderInformation = LeaderInformation.empty();
 
@@ -42,9 +48,7 @@ public class TestingLeaderElectionEventHandler extends TestingLeaderBase impleme
 
 	@Override
 	public void onGrantLeadership() {
-		if (leaderElectionDriver == null) {
-			throw new FlinkRuntimeException("init() should be called first.");
-		}
+		waitForInit();
 		confirmedLeaderInformation = leaderInformation;
 		leaderElectionDriver.writeLeaderInformation(confirmedLeaderInformation);
 		leaderEventQueue.offer(confirmedLeaderInformation);
@@ -52,6 +56,7 @@ public class TestingLeaderElectionEventHandler extends TestingLeaderBase impleme
 
 	@Override
 	public void onRevokeLeadership() {
+		waitForInit();
 		confirmedLeaderInformation = LeaderInformation.empty();
 		leaderElectionDriver.writeLeaderInformation(confirmedLeaderInformation);
 		leaderEventQueue.offer(confirmedLeaderInformation);
@@ -59,6 +64,7 @@ public class TestingLeaderElectionEventHandler extends TestingLeaderBase impleme
 
 	@Override
 	public void onLeaderInformationChange(LeaderInformation leaderInformation) {
+		waitForInit();
 		if (confirmedLeaderInformation.getLeaderSessionID() != null &&
 			!this.confirmedLeaderInformation.equals(leaderInformation)) {
 			leaderElectionDriver.writeLeaderInformation(confirmedLeaderInformation);
@@ -67,5 +73,14 @@ public class TestingLeaderElectionEventHandler extends TestingLeaderBase impleme
 
 	public LeaderInformation getConfirmedLeaderInformation() {
 		return confirmedLeaderInformation;
+	}
+
+	private void waitForInit() {
+		try {
+			CommonTestUtils.waitUntilCondition(() -> leaderElectionDriver != null, Deadline.fromNow(timeout));
+		} catch (Exception ex) {
+			throw new FlinkRuntimeException("init() was not called in " + timeout + ". It usually means that " +
+				"creating LeaderElectionDriver takes too long or forgetting to call the init() method.");
+		}
 	}
 }
