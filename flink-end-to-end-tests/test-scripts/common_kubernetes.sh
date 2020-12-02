@@ -24,7 +24,7 @@ CONTAINER_SCRIPTS=${END_TO_END_DIR}/test-scripts/container-scripts
 MINIKUBE_START_RETRIES=3
 MINIKUBE_START_BACKOFF=5
 RESULT_HASH="e682ec6622b5e83f2eb614617d5ab2cf"
-MINIKUBE_VERSION="v1.8.2"
+MINIKUBE_VERSION="v1.15.1"
 MINIKUBE_PATH="/usr/local/bin/minikube-$MINIKUBE_VERSION"
 
 NON_LINUX_ENV_NOTE="****** Please start/stop minikube manually in non-linux environment. ******"
@@ -49,6 +49,9 @@ function setup_kubernetes_for_linux {
         curl -Lo minikube https://storage.googleapis.com/minikube/releases/$MINIKUBE_VERSION/minikube-linux-$arch && \
             chmod +x minikube && sudo mv minikube $MINIKUBE_PATH
     fi
+    # conntrack is required for minikube v1.15.1
+    sudo apt-get update
+    sudo apt-get install conntrack -y
 }
 
 function check_kubernetes_status {
@@ -75,7 +78,7 @@ function start_kubernetes_if_not_running {
         # here.
         # Similarly, the kubelets are marking themself as "low disk space",
         # causing Flink to avoid this node (again, failing the test)
-        sudo CHANGE_MINIKUBE_NONE_USER=true $MINIKUBE_PATH start --vm-driver=none \
+        sudo CHANGE_MINIKUBE_NONE_USER=true $MINIKUBE_PATH start --driver=none \
             --extra-config=kubelet.image-gc-high-threshold=99 \
             --extra-config=kubelet.image-gc-low-threshold=98 \
             --extra-config=kubelet.minimum-container-ttl-duration=120m \
