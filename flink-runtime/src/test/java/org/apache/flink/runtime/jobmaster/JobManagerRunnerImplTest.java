@@ -36,9 +36,9 @@ import org.apache.flink.runtime.rest.handler.legacy.utils.ArchivedExecutionGraph
 import org.apache.flink.runtime.testingUtils.TestingUtils;
 import org.apache.flink.runtime.testtasks.NoOpInvokable;
 import org.apache.flink.runtime.util.TestingFatalErrorHandler;
+import org.apache.flink.runtime.util.TestingUserCodeClassLoader;
 import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.TestLogger;
-import org.apache.flink.runtime.util.TestingUserCodeClassLoader;
 
 import org.junit.After;
 import org.junit.Before;
