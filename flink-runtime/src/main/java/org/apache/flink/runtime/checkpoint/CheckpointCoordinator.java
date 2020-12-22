@@ -210,6 +210,8 @@ public class CheckpointCoordinator {
 
 	private final CheckpointRequestDecider requestDecider;
 
+	private long nextCheckpointIdFromInitialSavepoint = 0;
+
 	// --------------------------------------------------------------------------------------------
 
 	public CheckpointCoordinator(
@@ -640,7 +642,8 @@ public class CheckpointCoordinator {
 			try {
 				// this must happen outside the coordinator-wide lock, because it communicates
 				// with external services (in HA mode) and may block for a while.
-				long checkpointID = checkpointIdCounter.getAndIncrement();
+				final long checkpointID = Math.max(
+					checkpointIdCounter.getAndIncrement(), nextCheckpointIdFromInitialSavepoint);
 
 				CheckpointStorageLocation checkpointStorageLocation = props.isSavepoint() ?
 					checkpointStorage
@@ -1479,10 +1482,9 @@ public class CheckpointCoordinator {
 		completedCheckpointStore.addCheckpoint(savepoint, checkpointsCleaner, this::scheduleTriggerRequest);
 
 		// Reset the checkpoint ID counter
-		long nextCheckpointId = savepoint.getCheckpointID() + 1;
-		checkpointIdCounter.setCount(nextCheckpointId);
+		nextCheckpointIdFromInitialSavepoint = savepoint.getCheckpointID() + 1;
 
-		LOG.info("Reset the checkpoint ID of job {} to {}.", job, nextCheckpointId);
+		LOG.info("Reset the checkpoint ID of job {} to {}.", job, nextCheckpointIdFromInitialSavepoint);
 
 		final OptionalLong restoredCheckpointId = restoreLatestCheckpointedStateInternal(
 				new HashSet<>(tasks.values()),

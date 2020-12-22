@@ -78,6 +78,10 @@ public class DefaultCompletedCheckpointStore<R extends ResourceVersion<R>> imple
 
 	private final CheckpointStoreUtil completedCheckpointStoreUtil;
 
+	private final List<CompletedCheckpoint> initialSavepoints = new ArrayList<>();
+
+	private boolean isInitialSavepointsRecovered = false;
+
 	/**
 	 * Creates a {@link DefaultCompletedCheckpointStore} instance.
 	 *
@@ -180,6 +184,11 @@ public class DefaultCompletedCheckpointStore<R extends ResourceVersion<R>> imple
 		completedCheckpoints.clear();
 		completedCheckpoints.addAll(retrievedCheckpoints);
 
+		// Add the initial savepoints
+		completedCheckpoints.addAll(initialSavepoints);
+		initialSavepoints.clear();
+		isInitialSavepointsRecovered = true;
+
 		if (completedCheckpoints.isEmpty() && numberOfInitialCheckpoints > 0) {
 			throw new FlinkException(
 				"Could not read any of the " + numberOfInitialCheckpoints + " checkpoints from storage.",
@@ -204,6 +213,12 @@ public class DefaultCompletedCheckpointStore<R extends ResourceVersion<R>> imple
 			Runnable postCleanup) throws Exception {
 
 		checkNotNull(checkpoint, "Checkpoint");
+
+		// Initial savepoint does not need to be persisted since the leader has not been granted.
+		if (checkpoint.getProperties().isSavepoint() && !isInitialSavepointsRecovered) {
+			initialSavepoints.add(checkpoint);
+			return;
+		}
 
 		final String path = completedCheckpointStoreUtil.checkpointIDToName(checkpoint.getCheckpointID());
 
