@@ -137,8 +137,17 @@ public class JobManagerRunnerImpl implements LeaderContender, OnCompletionAction
 
 		this.leaderGatewayFuture = new CompletableFuture<>();
 
-		// now start the JobManager
-		this.jobMasterService = jobMasterFactory.createJobMasterService(jobGraph, this, userCodeLoader, initializationTimestamp);
+		synchronized (lock) {
+			try {
+				leaderElectionService.start(this);
+			} catch (Exception e) {
+				log.error("Could not start the JobManager because the leader election service did not start.", e);
+				throw new Exception("Could not start the leader election service.", e);
+			}
+			// now start the JobManager
+			this.jobMasterService = jobMasterFactory.createJobMasterService(
+				jobGraph, this, userCodeLoader, initializationTimestamp);
+		}
 	}
 
 	//----------------------------------------------------------------------------------------------
@@ -166,12 +175,7 @@ public class JobManagerRunnerImpl implements LeaderContender, OnCompletionAction
 
 	@Override
 	public void start() throws Exception {
-		try {
-			leaderElectionService.start(this);
-		} catch (Exception e) {
-			log.error("Could not start the JobManager because the leader election service did not start.", e);
-			throw new Exception("Could not start the leader election service.", e);
-		}
+		// noop
 	}
 
 	@Override
@@ -417,7 +421,7 @@ public class JobManagerRunnerImpl implements LeaderContender, OnCompletionAction
 
 	@Override
 	public String getDescription() {
-		return jobMasterService.getAddress();
+		return jobMasterService == null ? LeaderContender.super.getDescription() : jobMasterService.getAddress();
 	}
 
 	@Override

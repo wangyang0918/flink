@@ -24,6 +24,7 @@ import org.apache.flink.util.Preconditions;
 import javax.annotation.Nonnull;
 
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Standalone implementation of the {@link LeaderElectionService} interface. The standalone
@@ -45,7 +46,8 @@ public class StandaloneLeaderElectionService implements LeaderElectionService {
 		contender = Preconditions.checkNotNull(newContender);
 
 		// directly grant leadership to the given contender
-		contender.grantLeadership(HighAvailabilityServices.DEFAULT_LEADER_ID);
+		// TODO introduce the io executor to Standalone HA service and use it here.
+		CompletableFuture.runAsync(() -> contender.grantLeadership(HighAvailabilityServices.DEFAULT_LEADER_ID));
 	}
 
 	@Override

@@ -357,7 +357,7 @@ public class DispatcherTest extends TestLogger {
 	@Test(timeout = 5_000L)
 	public void testNonBlockingJobSubmission() throws Exception {
 		dispatcher = createAndStartDispatcher(heartbeatServices, haServices, new ExpectedJobIdJobManagerRunnerFactory(TEST_JOB_ID, createdJobManagerRunnerLatch));
-		jobMasterLeaderElectionService.isLeader(UUID.randomUUID());
+
 		DispatcherGateway dispatcherGateway = dispatcher.getSelfGateway(DispatcherGateway.class);
 
 		Tuple2<JobGraph, BlockingJobVertex> blockingJobGraph = getBlockingJobGraphAndVertex();
@@ -376,6 +376,8 @@ public class DispatcherTest extends TestLogger {
 		// submission has succeeded, let the initialization finish.
 		blockingJobGraph.f1.unblock();
 
+		grantJobMasterLeadership();
+
 		// ensure job is running
 		CommonTestUtils.waitUntilCondition(() -> dispatcherGateway.requestJobStatus(jobGraph.getJobID(), TIMEOUT).get() == JobStatus.RUNNING,
 			Deadline.fromNow(Duration.of(10, ChronoUnit.SECONDS)), 5L);
@@ -384,7 +386,7 @@ public class DispatcherTest extends TestLogger {
 	@Test(timeout = 5_000L)
 	public void testInvalidCallDuringInitialization() throws Exception {
 		dispatcher = createAndStartDispatcher(heartbeatServices, haServices, new ExpectedJobIdJobManagerRunnerFactory(TEST_JOB_ID, createdJobManagerRunnerLatch));
-		jobMasterLeaderElectionService.isLeader(UUID.randomUUID());
+
 		DispatcherGateway dispatcherGateway = dispatcher.getSelfGateway(DispatcherGateway.class);
 
 		Tuple2<JobGraph, BlockingJobVertex> blockingJobGraph = getBlockingJobGraphAndVertex();
@@ -405,6 +407,8 @@ public class DispatcherTest extends TestLogger {
 		// submission has succeeded, let the initialization finish.
 		blockingJobGraph.f1.unblock();
 
+		grantJobMasterLeadership();
+
 		// ensure job is running
 		CommonTestUtils.waitUntilCondition(() -> dispatcherGateway.requestJobStatus(jobGraph.getJobID(), TIMEOUT).get() == JobStatus.RUNNING,
 			Deadline.fromNow(Duration.of(10, ChronoUnit.SECONDS)), 5L);
@@ -413,7 +417,6 @@ public class DispatcherTest extends TestLogger {
 	@Test
 	public void testCancellationDuringInitialization() throws Exception {
 		dispatcher = createAndStartDispatcher(heartbeatServices, haServices, new ExpectedJobIdJobManagerRunnerFactory(TEST_JOB_ID, createdJobManagerRunnerLatch));
-		jobMasterLeaderElectionService.isLeader(UUID.randomUUID());
 		DispatcherGateway dispatcherGateway = dispatcher.getSelfGateway(DispatcherGateway.class);
 
 		// create a job graph of a job that blocks forever
@@ -430,6 +433,9 @@ public class DispatcherTest extends TestLogger {
 		assertThat(cancellationFuture.isDone(), is(false));
 		// unblock
 		blockingJobGraph.f1.unblock();
+
+		grantJobMasterLeadership();
+
 		// wait until cancelled
 		cancellationFuture.get();
 		assertThat(dispatcherGateway.requestJobResult(jobID, TIMEOUT).get().getApplicationStatus(), is(ApplicationStatus.CANCELED));
@@ -576,7 +582,7 @@ public class DispatcherTest extends TestLogger {
 			fail("Unable to get a job status future blocked on leader election.");
 		}
 
-		jobMasterLeaderElectionService.isLeader(UUID.randomUUID()).get();
+		grantJobMasterLeadership();
 
 		assertThat(jobStatusFuture.get(), is(JobStatus.RUNNING));
 	}
@@ -655,7 +661,6 @@ public class DispatcherTest extends TestLogger {
 				}
 			}));
 
-		jobMasterLeaderElectionService.isLeader(UUID.randomUUID());
 		final DispatcherGateway dispatcherGateway = dispatcher.getSelfGateway(DispatcherGateway.class);
 
 		dispatcherGateway.submitJob(jobGraph, TIMEOUT).get();
@@ -771,10 +776,12 @@ public class DispatcherTest extends TestLogger {
 	@Test
 	public void testInitializationTimestampForwardedToExecutionGraph() throws Exception {
 		dispatcher = createAndStartDispatcher(heartbeatServices, haServices, new ExpectedJobIdJobManagerRunnerFactory(TEST_JOB_ID, createdJobManagerRunnerLatch));
-		jobMasterLeaderElectionService.isLeader(UUID.randomUUID());
+
 		DispatcherGateway dispatcherGateway = dispatcher.getSelfGateway(DispatcherGateway.class);
 
 		dispatcherGateway.submitJob(jobGraph, TIMEOUT).get();
+
+		grantJobMasterLeadership();
 
 		// ensure job is running
 		CommonTestUtils.waitUntilCondition(
@@ -791,6 +798,11 @@ public class DispatcherTest extends TestLogger {
 
 		// ensure correct order
 		assertThat(result.getStatusTimestamp(JobStatus.INITIALIZING) <= result.getStatusTimestamp(JobStatus.CREATED), is(true));
+	}
+
+	private void grantJobMasterLeadership() throws Exception {
+		jobMasterLeaderElectionService.getStartFuture().get();
+		jobMasterLeaderElectionService.isLeader(UUID.randomUUID());
 	}
 
 	private static final class BlockingJobManagerRunnerFactory extends TestingJobManagerRunnerFactory {
