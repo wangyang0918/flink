@@ -28,6 +28,7 @@ import org.apache.flink.kubernetes.kubeclient.KubeClientFactory;
 import org.apache.flink.kubernetes.kubeclient.factory.KubernetesTaskManagerFactory;
 import org.apache.flink.kubernetes.kubeclient.parameters.KubernetesTaskManagerParameters;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesTooOldResourceVersionException;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesWatch;
 import org.apache.flink.kubernetes.utils.KubernetesUtils;
 import org.apache.flink.runtime.clusterframework.ApplicationStatus;
@@ -103,12 +104,7 @@ public class KubernetesResourceManagerDriver
     protected void initializeInternal() throws Exception {
         kubeClientOpt =
                 Optional.of(kubeClientFactory.fromConfiguration(flinkConfig, getIoExecutor()));
-        podsWatchOpt =
-                Optional.of(
-                        getKubeClient()
-                                .watchPodsAndDoCallback(
-                                        KubernetesUtils.getTaskManagerLabels(clusterId),
-                                        new PodCallbackHandlerImpl()));
+        podsWatchOpt = watchTaskManagerPods();
         recoverWorkerNodesFromPreviousAttempts();
     }
 
@@ -312,6 +308,14 @@ public class KubernetesResourceManagerDriver
         return kubeClientOpt.get();
     }
 
+    private Optional<KubernetesWatch> watchTaskManagerPods() {
+        return Optional.of(
+                getKubeClient()
+                        .watchPodsAndDoCallback(
+                                KubernetesUtils.getTaskManagerLabels(clusterId),
+                                new PodCallbackHandlerImpl()));
+    }
+
     // ------------------------------------------------------------------------
     //  FlinkKubeClient.WatchCallbackHandler
     // ------------------------------------------------------------------------
@@ -359,8 +363,17 @@ public class KubernetesResourceManagerDriver
         }
 
         @Override
-        public void handleFatalError(Throwable throwable) {
-            getResourceEventHandler().onError(throwable);
+        public void handleError(Throwable throwable) {
+            if (throwable instanceof KubernetesTooOldResourceVersionException) {
+                getMainThreadExecutor()
+                        .execute(
+                                () -> {
+                                    log.info("Creating a new watch on TaskManager pods.");
+                                    podsWatchOpt = watchTaskManagerPods();
+                                });
+            } else {
+                getResourceEventHandler().onError(throwable);
+            }
         }
     }
 }
