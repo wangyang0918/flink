@@ -48,7 +48,7 @@ function build_image() {
     local server_pid=$!
 
     echo "Preparing Dockeriles"
-    git clone https://github.com/apache/flink-docker.git --branch dev-master --single-branch
+    git clone https://github.com/wangyang0918/flink-docker.git --branch FLINK-21554-remove-classpath-stuff --single-branch
     cd flink-docker
     ./add-custom.sh -u ${file_server_address}:9999/flink.tgz -n ${image_name}
 
