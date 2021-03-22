@@ -34,6 +34,7 @@ import org.apache.flink.kubernetes.utils.Constants;
 import org.apache.flink.kubernetes.utils.KubernetesUtils;
 import org.apache.flink.runtime.concurrent.FutureUtils;
 import org.apache.flink.util.ExceptionUtils;
+import org.apache.flink.util.ExecutorUtils;
 import org.apache.flink.util.FlinkRuntimeException;
 
 import io.fabric8.kubernetes.api.model.ConfigMap;
@@ -58,7 +59,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -75,12 +77,12 @@ public class Fabric8FlinkKubeClient implements FlinkKubeClient {
     private final String namespace;
     private final int maxRetryAttempts;
 
-    private final Executor kubeClientExecutorService;
+    private final ExecutorService kubeClientExecutorService;
 
     public Fabric8FlinkKubeClient(
             Configuration flinkConfig,
             NamespacedKubernetesClient client,
-            Supplier<Executor> asyncExecutorFactory) {
+            Supplier<ExecutorService> asyncExecutorFactory) {
         this.internalClient = checkNotNull(client);
         this.clusterId = checkNotNull(flinkConfig.getString(KubernetesConfigOptions.CLUSTER_ID));
 
@@ -90,7 +92,7 @@ public class Fabric8FlinkKubeClient implements FlinkKubeClient {
                 flinkConfig.getInteger(
                         KubernetesConfigOptions.KUBERNETES_TRANSACTIONAL_OPERATION_MAX_RETRIES);
 
-        this.kubeClientExecutorService = asyncExecutorFactory.get();
+        this.kubeClientExecutorService = checkNotNull(asyncExecutorFactory.get());
     }
 
     @Override
@@ -343,6 +345,7 @@ public class Fabric8FlinkKubeClient implements FlinkKubeClient {
     @Override
     public void close() {
         this.internalClient.close();
+        ExecutorUtils.gracefulShutdown(5, TimeUnit.SECONDS, this.kubeClientExecutorService);
     }
 
     @Override
