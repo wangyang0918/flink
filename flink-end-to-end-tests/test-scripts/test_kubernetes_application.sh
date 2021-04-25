@@ -38,6 +38,9 @@ if ! retry_times $IMAGE_BUILD_RETRIES $IMAGE_BUILD_BACKOFF "build_image ${FLINK_
 	exit 1
 fi
 
+# Set image for init container
+docker tag ${FLINK_IMAGE_NAME} testing-init-image
+
 kubectl create clusterrolebinding ${CLUSTER_ROLE_BINDING} --clusterrole=edit --serviceaccount=default:default --namespace=default
 
 mkdir -p "$LOCAL_LOGS_PATH"
@@ -50,7 +53,8 @@ mkdir -p "$LOCAL_LOGS_PATH"
     -Dkubernetes.jobmanager.cpu=0.5 \
     -Dkubernetes.taskmanager.cpu=0.5 \
     -Dkubernetes.rest-service.exposed.type=NodePort \
-    local:///opt/flink/examples/batch/WordCount.jar
+    -Dkubernetes.pod-template-file=${CONTAINER_SCRIPTS}/kubernetes-pod-template.yaml \
+    local:///opt/flink/artifacts/myjob.jar
 
 kubectl wait --for=condition=Available --timeout=30s deploy/${CLUSTER_ID} || exit 1
 jm_pod_name=$(kubectl get pods --selector="app=${CLUSTER_ID},component=jobmanager" -o jsonpath='{..metadata.name}')
