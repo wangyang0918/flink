@@ -150,6 +150,8 @@ jobs:
       IT_CASE_S3_SECRET_KEY: $(SECRET_S3_SECRET_KEY)
       IT_CASE_GLUE_SCHEMA_ACCESS_KEY: $(SECRET_GLUE_SCHEMA_ACCESS_KEY)
       IT_CASE_GLUE_SCHEMA_SECRET_KEY: $(SECRET_GLUE_SCHEMA_SECRET_KEY)
+      # Env ITCASE_KUBECONFIG is required to run the Kubernetes related ITCases
+      ITCASE_KUBECONFIG: ~/.kube/config
 
   - task: PublishTestResults@2
     condition: succeededOrFailed()
