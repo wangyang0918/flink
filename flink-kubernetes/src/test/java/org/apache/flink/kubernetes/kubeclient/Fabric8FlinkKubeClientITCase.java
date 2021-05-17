@@ -43,6 +43,7 @@ import java.util.concurrent.TimeUnit;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertThat;
+import static org.junit.Assert.fail;
 
 /**
  * IT Tests for {@link org.apache.flink.kubernetes.kubeclient.Fabric8FlinkKubeClient} with real K8s
@@ -147,5 +148,6 @@ public class Fabric8FlinkKubeClientITCase extends TestLogger {
                 flinkKubeClient.getConfigMap(TEST_CONFIG_MAP_NAME);
         assertThat(configMapOpt.isPresent(), is(true));
         assertThat(configMapOpt.get().getData().values(), everyItem(is(String.valueOf(target))));
+        fail("Failed the test to verify FLINK-22564");
     }
 }
